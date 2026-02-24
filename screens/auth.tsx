@@ -10,16 +10,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Dimensions
+  Dimensions,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { 
   FadeInDown, 
   FadeOutUp, 
   Layout, 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring 
+  FadeIn,
+  FadeOut
 } from 'react-native-reanimated';
 import { authService } from '../services/authService';
 
@@ -38,11 +38,20 @@ const AuthScreen = ({ navigation }: any) => {
   // Animation Toggle
   const toggleAuthMode = () => {
     setIsLogin(!isLogin);
-    // Reset form khi chuyển chế độ nếu muốn
+  };
+
+  const handleForgotPassword = () => {
+    // TODO: Navigate to ForgotPassword Screen or show Modal
+    Alert.alert('Reset Password', 'Link to reset password has been sent to your email.');
+  };
+
+  const handleGoogleLogin = async () => {
+    // TODO: Integrate Google Sign-In logic here
+    // Example: await GoogleSignin.signIn();
+    Alert.alert('Google Login', 'Google Sign-In logic goes here.');
   };
 
   const handleSubmit = async () => {
-    // Basic Validation
     if (!email || !password || (!isLogin && !name)) {
       Alert.alert('Missing Info', 'Please fill in all fields.');
       return;
@@ -60,12 +69,7 @@ const AuthScreen = ({ navigation }: any) => {
     setLoading(false);
 
     if (result.success || result.token) {
-      // Giả sử API trả về success hoặc token
-      // TODO: Lưu token vào SecureStore hoặc AsyncStorage tại đây
       Alert.alert('Success', isLogin ? 'Welcome back!' : 'Account created!');
-      
-      // Navigate vào trong App chính
-      // navigation.replace('Home'); 
     } else {
       Alert.alert('Error', result.message || 'Authentication failed');
     }
@@ -133,21 +137,58 @@ const AuthScreen = ({ navigation }: any) => {
               />
             </Animated.View>
 
+            {/* Forgot Password - Chỉ hiện khi đăng nhập */}
+            {isLogin && (
+              <Animated.View 
+                entering={FadeIn.duration(300)} 
+                exiting={FadeOut.duration(200)}
+                layout={Layout.springify()}
+                style={styles.forgotPassContainer}
+              >
+                <TouchableOpacity onPress={handleForgotPassword}>
+                  <Text style={styles.forgotPassText}>Forgot Password?</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
             {/* Submit Button */}
-            <TouchableOpacity 
-              activeOpacity={0.8} 
-              onPress={handleSubmit} 
-              disabled={loading}
-              style={styles.button}
-            >
-              {loading ? (
-                <ActivityIndicator color="#000" />
-              ) : (
-                <Text style={styles.buttonText}>
-                  {isLogin ? 'Sign In' : 'Sign Up'}
-                </Text>
-              )}
-            </TouchableOpacity>
+            <Animated.View layout={Layout.springify()}>
+              <TouchableOpacity 
+                activeOpacity={0.8} 
+                onPress={handleSubmit} 
+                disabled={loading}
+                style={styles.button}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.buttonText}>
+                    {isLogin ? 'Sign In' : 'Sign Up'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* DIVIDER & GOOGLE LOGIN */}
+            <Animated.View layout={Layout.springify()} style={{ marginTop: 10 }}>
+              <View style={styles.dividerContainer}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity 
+                style={styles.googleButton} 
+                onPress={handleGoogleLogin}
+                activeOpacity={0.8}
+              >
+                {/* Nếu bạn có thư viện icon, thay Text 'G' bằng <AntDesign name="google" size={20} color="white" /> */}
+                <View style={styles.googleIconPlaceholder}>
+                  <Text style={styles.googleIconText}>G</Text>
+                </View>
+                <Text style={styles.googleButtonText}>Continue with Google</Text>
+              </TouchableOpacity>
+            </Animated.View>
 
             {/* Toggle Mode */}
             <View style={styles.footer}>
@@ -170,7 +211,7 @@ const AuthScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000', // Màu nền đen chủ đạo
+    backgroundColor: '#000000',
   },
   safeArea: {
     flex: 1,
@@ -181,20 +222,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   header: {
-    marginBottom: 40,
+    marginBottom: 30,
   },
   title: {
     fontSize: 42,
     fontWeight: '800',
-    color: '#FFFFFF', // Chữ trắng
+    color: '#FFFFFF',
     letterSpacing: 1,
     lineHeight: 50,
   },
   formContainer: {
-    gap: 16, // Khoảng cách giữa các input
+    gap: 16,
   },
   input: {
-    backgroundColor: '#1A1A1A', // Màu nền input hơi sáng hơn nền chính
+    backgroundColor: '#1A1A1A',
     borderWidth: 1,
     borderColor: '#333333',
     color: '#FFFFFF',
@@ -202,8 +243,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 16,
   },
+  // --- Forgot Password Styles ---
+  forgotPassContainer: {
+    alignItems: 'flex-end',
+    marginTop: -8, // Kéo gần lại input password một chút
+  },
+  forgotPassText: {
+    color: '#AAAAAA',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  // --- Main Button ---
   button: {
-    backgroundColor: '#FFFFFF', // Nút trắng nổi bật
+    backgroundColor: '#FFFFFF',
     paddingVertical: 18,
     borderRadius: 12,
     alignItems: 'center',
@@ -221,10 +273,59 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  // --- Divider Styles ---
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#333333',
+  },
+  dividerText: {
+    color: '#666666',
+    paddingHorizontal: 16,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // --- Google Button Styles ---
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    borderWidth: 1,
+    borderColor: '#333333',
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  googleIconPlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  googleIconText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  googleButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // --- Footer ---
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 16,
   },
   footerText: {
     color: '#888',

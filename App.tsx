@@ -1,18 +1,22 @@
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import AuthScreen from './screens/auth';
-
-const Stack = createNativeStackNavigator();
+import { useMemo, useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AuthEntryScreen from './screens/AuthEntryScreen';
+import ExploreEaseMain from './screens/ExploreEaseMain';
+import { sessionStore } from './services/backend';
 
 export default function App() {
+  const initialAuth = useMemo(() => !!sessionStore.get()?.accessToken, []);
+  const [authenticated, setAuthenticated] = useState(initialAuth);
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Auth">
-        <Stack.Screen name="Auth" component={AuthScreen} />
-        {/* Thêm các screens khác ở đây */}
-      </Stack.Navigator>
-      <StatusBar style="auto" />
-    </NavigationContainer>
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      {authenticated ? (
+        <ExploreEaseMain onLoggedOut={() => setAuthenticated(false)} />
+      ) : (
+        <AuthEntryScreen onAuthenticated={() => setAuthenticated(true)} />
+      )}
+    </SafeAreaProvider>
   );
 }
