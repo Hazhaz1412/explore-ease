@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Dimensions,
-  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -13,9 +12,13 @@ import {
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import LocationDiscoveryPanel from './LocationDiscoveryPanel';
+import DiscoveryModulePanel from './DiscoveryModulePanel';
 import ProfilePreferencesPrivacyPanel from './ProfilePreferencesPrivacyPanel';
+import EventManagementPanel from './EventManagementPanel';
+import CommunityReviewsPanel from './CommunityReviewsPanel';
+import NotificationsPanel from './NotificationsPanel';
 
-type TabKey = 'discover' | 'events' | 'community' | 'offline' | 'profile';
+type TabKey = 'discover' | 'events' | 'notifications' | 'community' | 'offline' | 'profile';
 
 type Props = {
   onLoggedOut: () => void;
@@ -27,6 +30,7 @@ const IS_WIDE = width >= 900;
 const tabs: { key: TabKey; label: string }[] = [
   { key: 'discover', label: 'Discover' },
   { key: 'events', label: 'Events' },
+  { key: 'notifications', label: 'Notifications' },
   { key: 'community', label: 'Reviews' },
   { key: 'offline', label: 'Offline' },
   { key: 'profile', label: 'Profile' },
@@ -36,61 +40,6 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const [activeTab, setActiveTab] = useState<TabKey>('discover');
   const [searchText, setSearchText] = useState('');
   const [offlineMode, setOfflineMode] = useState(false);
-  const [eventModalVisible, setEventModalVisible] = useState(false);
-  const [eventForm, setEventForm] = useState({
-    title: '',
-    date: '',
-    category: '',
-    maxPeople: '',
-  });
-
-  const events = useMemo(
-    () => [
-      {
-        title: 'Sunset Kayak Meetup',
-        time: 'Today, 18:30',
-        attendees: '12 / 20',
-        privacy: 'Public',
-      },
-      {
-        title: 'Local Food Tasting Loop',
-        time: 'Tomorrow, 19:00',
-        attendees: '8 / 12',
-        privacy: 'Friends',
-      },
-      {
-        title: 'Weekend Craft Market Walk',
-        time: 'Sat, 10:00',
-        attendees: '25 / 40',
-        privacy: 'Public',
-      },
-    ],
-    []
-  );
-
-  const reviews = useMemo(
-    () => [
-      {
-        place: 'Lantern Night Street',
-        rating: 4.8,
-        comment: 'Great food quality and smooth walking route suggestions.',
-        reviewer: 'A. Tran',
-      },
-      {
-        place: 'Coastal Bike Path',
-        rating: 4.7,
-        comment: 'Clean route, safe at dawn, and accurate location prompts.',
-        reviewer: 'M. Nguyen',
-      },
-      {
-        place: 'Riverfront Acoustic Event',
-        rating: 4.6,
-        comment: 'Good event host controls, friendly group atmosphere.',
-        reviewer: 'L. Ho',
-      },
-    ],
-    []
-  );
 
   const offlinePacks = useMemo(
     () => [
@@ -101,14 +50,15 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
     []
   );
 
-  const createEvent = () => {
-    setEventForm({ title: '', date: '', category: '', maxPeople: '' });
-    setEventModalVisible(false);
-  };
-
   const renderDiscover = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Content Browsing</Text>
+        <Text style={styles.sectionMeta}>Explore attractions, cuisines & activities — auto-categorized</Text>
+      </View>
+      <DiscoveryModulePanel />
+
+      <View style={[styles.sectionHeader, { marginTop: 18 }]}>
         <Text style={styles.sectionTitle}>Location-Based Discovery</Text>
         <Text style={styles.sectionMeta}>GPS, Map, Nearby POI/Events, Distance & Route</Text>
       </View>
@@ -119,29 +69,10 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderEvents = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Event Explorer</Text>
-        <Pressable onPress={() => setEventModalVisible(true)} style={styles.compactButton}>
-          <Text style={styles.compactButtonPlus}>+</Text>
-          <Text style={styles.compactButtonText}>Create Event</Text>
-        </Pressable>
+        <Text style={styles.sectionTitle}>Event Management</Text>
+        <Text style={styles.sectionMeta}>Discover, filter & manage travel events</Text>
       </View>
-      <View style={styles.eventList}>
-        {events.map((event, idx) => (
-          <Animated.View key={event.title} entering={FadeInDown.delay(70 * idx).duration(350)} style={styles.eventCard}>
-            <View style={styles.eventTop}>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-              <Text style={styles.eventBadge}>{event.privacy}</Text>
-            </View>
-            <View style={styles.eventMetaRow}>
-              <View style={styles.systemIconSmall}>
-                <Text style={styles.systemIconTextSmall}>TM</Text>
-              </View>
-              <Text style={styles.eventMetaText}>{event.time}</Text>
-            </View>
-            <Text style={styles.eventMetaText}>Attendees: {event.attendees}</Text>
-          </Animated.View>
-        ))}
-      </View>
+      <EventManagementPanel />
     </Animated.View>
   );
 
@@ -151,21 +82,7 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
         <Text style={styles.sectionTitle}>Community Reviews</Text>
         <Text style={styles.sectionMeta}>Verified traveler feedback</Text>
       </View>
-      <View style={styles.reviewList}>
-        {reviews.map((review, idx) => (
-          <Animated.View key={review.place} entering={FadeInDown.delay(80 * idx).duration(350)} style={styles.reviewCard}>
-            <View style={styles.reviewTop}>
-              <Text style={styles.reviewPlace}>{review.place}</Text>
-              <View style={styles.reviewScore}>
-                <Text style={styles.reviewStar}>*</Text>
-                <Text style={styles.reviewScoreText}>{review.rating}</Text>
-              </View>
-            </View>
-            <Text style={styles.reviewComment}>{review.comment}</Text>
-            <Text style={styles.reviewAuthor}>by {review.reviewer}</Text>
-          </Animated.View>
-        ))}
-      </View>
+      <CommunityReviewsPanel />
       <View style={styles.systemCard}>
         <View style={styles.systemIcon}>
           <Text style={styles.systemIconText}>ENC</Text>
@@ -174,6 +91,16 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
           Secure communication is enabled for event messages and host coordination.
         </Text>
       </View>
+    </Animated.View>
+  );
+
+  const renderNotifications = () => (
+    <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Notification Center</Text>
+        <Text style={styles.sectionMeta}>Offers, alerts, messages, and push registration</Text>
+      </View>
+      <NotificationsPanel />
     </Animated.View>
   );
 
@@ -227,6 +154,7 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
 
   const renderContent = () => {
     if (activeTab === 'events') return renderEvents();
+    if (activeTab === 'notifications') return renderNotifications();
     if (activeTab === 'community') return renderCommunity();
     if (activeTab === 'offline') return renderOffline();
     if (activeTab === 'profile') return renderProfile();
@@ -274,51 +202,6 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
 
         {renderContent()}
       </ScrollView>
-
-      <Modal visible={eventModalVisible} transparent animationType="fade" onRequestClose={() => setEventModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Create Travel Event</Text>
-            <TextInput
-              placeholder="Event title"
-              placeholderTextColor="#6f7a85"
-              value={eventForm.title}
-              onChangeText={(value) => setEventForm((prev) => ({ ...prev, title: value }))}
-              style={styles.modalInput}
-            />
-            <TextInput
-              placeholder="Date / time"
-              placeholderTextColor="#6f7a85"
-              value={eventForm.date}
-              onChangeText={(value) => setEventForm((prev) => ({ ...prev, date: value }))}
-              style={styles.modalInput}
-            />
-            <TextInput
-              placeholder="Category"
-              placeholderTextColor="#6f7a85"
-              value={eventForm.category}
-              onChangeText={(value) => setEventForm((prev) => ({ ...prev, category: value }))}
-              style={styles.modalInput}
-            />
-            <TextInput
-              placeholder="Max attendees"
-              placeholderTextColor="#6f7a85"
-              value={eventForm.maxPeople}
-              onChangeText={(value) => setEventForm((prev) => ({ ...prev, maxPeople: value }))}
-              keyboardType="number-pad"
-              style={styles.modalInput}
-            />
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setEventModalVisible(false)} style={styles.modalButtonGhost}>
-                <Text style={styles.modalButtonGhostText}>Cancel</Text>
-              </Pressable>
-              <Pressable onPress={createEvent} style={styles.modalButtonPrimary}>
-                <Text style={styles.modalButtonPrimaryText}>Create</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
