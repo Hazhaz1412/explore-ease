@@ -1,4 +1,5 @@
 const API_URL = (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.51:8082').replace(/\/+$/, '');
+export const apiBaseUrl = API_URL;
 
 export type AuthUser = {
   id: number;
@@ -510,6 +511,7 @@ export const discoveryApi = {
 
 export type EventType = 'FOOD' | 'CULTURE' | 'NATURE' | 'SPORTS' | 'ADVENTURE' | 'MUSIC' | 'MARKET' | 'WORKSHOP' | 'SOCIAL' | 'OTHER';
 export type EventStatus = 'INCOMING' | 'ONGOING' | 'COMPLETED';
+export type EventModerationStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export type EventItem = {
   id: number;
@@ -517,6 +519,8 @@ export type EventItem = {
   description: string | null;
   eventType: EventType;
   status: EventStatus;
+  moderationStatus: EventModerationStatus;
+  moderationReason: string | null;
   isFree: boolean;
   price: number | null;
   currency: string;
@@ -939,6 +943,374 @@ export const reviewApi = {
     return request<{ message: string }>(
       `/api/reviews/flagged/${reviewId}`,
       { method: 'DELETE' },
+      { auth: true }
+    );
+  },
+};
+
+// ─── Admin Dashboard Types ───────────────────────────────────────────────────
+
+export type AdminUserProfile = {
+  id: number;
+  username: string;
+  email: string;
+  isActive: boolean;
+  isSuperuser: boolean;
+  isStaff: boolean;
+  dateJoined?: string | null;
+  lastLogin?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  travelStyle?: string | null;
+  bio?: string | null;
+  profilePictureUrl?: string | null;
+};
+
+export type AdminUserListResponse = {
+  users: AdminUserProfile[];
+  total: number;
+  page: number;
+  size: number;
+  totalPages: number;
+  hasNext: boolean;
+};
+
+export type AdminReviewItem = {
+  id: number;
+  targetType: string;
+  targetId: string;
+  targetName?: string | null;
+  rating: number;
+  comment?: string | null;
+  authorUsername?: string | null;
+  authorId?: number | null;
+  helpfulCount: number;
+  flagCount: number;
+  moderationStatus?: ReviewModerationStatus | string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type AdminReviewListResponse = {
+  reviews: AdminReviewItem[];
+  total: number;
+  page: number;
+  size: number;
+  totalPages: number;
+  hasNext: boolean;
+};
+
+export type AdminUserActivityItem = {
+  userId: number;
+  username?: string | null;
+  email?: string | null;
+  successfulLogins: number;
+  reviewsCreated: number;
+  eventsCreated: number;
+};
+
+export type AdminTopPlaceItem = {
+  place: string;
+  score: number;
+};
+
+export type AdminTrafficStatItem = {
+  date: string;
+  successfulLogins: number;
+  eventsCreated: number;
+  reviewsCreated: number;
+};
+
+export type AdminAnalytics = {
+  totalUsers: number;
+  activeUsersInWindow: number;
+  totalEvents: number;
+  pendingEvents: number;
+  approvedEvents: number;
+  rejectedEvents: number;
+  totalReviews: number;
+  flaggedReviews: number;
+  totalDiscoveryBookmarks: number;
+  totalEventBookmarks: number;
+  totalLogins: number;
+  successfulLoginsInWindow: number;
+  windowDays: number;
+  userActivity: AdminUserActivityItem[];
+  topPlaces: AdminTopPlaceItem[];
+  trafficStats: AdminTrafficStatItem[];
+};
+
+export const adminApi = {
+  async listUsers(input: { search?: string; page?: number; size?: number } = {}) {
+    const query = buildQuery({
+      search: input.search,
+      page: input.page,
+      size: input.size,
+    });
+    return request<AdminUserListResponse>(`/api/admin/users${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async listEvents(input: {
+    status?: EventStatus | 'ALL';
+    eventType?: EventType | 'ALL';
+    moderationStatus?: EventModerationStatus | 'ALL';
+    isFree?: boolean;
+    search?: string;
+    page?: number;
+    size?: number;
+  } = {}) {
+    const query = buildQuery({
+      status: input.status,
+      eventType: input.eventType,
+      moderationStatus: input.moderationStatus,
+      isFree: input.isFree != null ? String(input.isFree) : undefined,
+      search: input.search,
+      page: input.page,
+      size: input.size,
+    });
+    return request<EventListResponse>(`/api/admin/events${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async approveEvent(eventId: number) {
+    return request<EventItem>(
+      `/api/admin/events/${eventId}/approve`,
+      { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async rejectEvent(eventId: number, reason: string) {
+    return request<EventItem>(
+      `/api/admin/events/${eventId}/reject`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+      { auth: true }
+    );
+  },
+
+  async listReviews(input: { moderationStatus?: ReviewModerationStatus | 'ALL'; search?: string; page?: number; size?: number } = {}) {
+    const query = buildQuery({
+      moderationStatus: input.moderationStatus,
+      search: input.search,
+      page: input.page,
+      size: input.size,
+    });
+    return request<AdminReviewListResponse>(`/api/admin/reviews${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async getFlaggedReviews(page = 0, size = 10) {
+    const query = buildQuery({ page, size });
+    return request<ReviewListResponse>(`/api/admin/reviews/flagged${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async approveFlaggedReview(reviewId: number) {
+    return request<ReviewItem>(
+      `/api/admin/reviews/${reviewId}/approve`,
+      { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async deleteFlaggedReview(reviewId: number) {
+    return request<{ message: string }>(
+      `/api/admin/reviews/${reviewId}`,
+      { method: 'DELETE' },
+      { auth: true }
+    );
+  },
+
+  async analytics(windowDays = 14) {
+    const query = buildQuery({ windowDays });
+    return request<AdminAnalytics>(`/api/admin/analytics${query}`, { method: 'GET' }, { auth: true });
+  },
+};
+
+// ─── Travel Planning Types ───────────────────────────────────────────────────
+
+export type TravelPlanItemType = 'PLACE' | 'EVENT' | 'NOTE';
+export type TravelMode = 'walking' | 'driving' | 'bicycling';
+
+export type TravelPlanSummary = {
+  id: number;
+  title: string;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isPublic: boolean;
+  itemCount: number;
+  dayCount: number;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type TravelPlanItem = {
+  id: number;
+  dayNumber: number;
+  sortOrder: number;
+  itemType: TravelPlanItemType;
+  referenceId?: string | null;
+  title?: string | null;
+  locationName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  note?: string | null;
+  reminderAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type TravelPlanDetail = {
+  id: number;
+  title: string;
+  description?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isPublic: boolean;
+  shareToken?: string | null;
+  sharePath?: string | null;
+  ownerUsername?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  items: TravelPlanItem[];
+};
+
+export type TravelPlanShare = {
+  planId: number;
+  shareToken: string;
+  sharePath: string;
+};
+
+export type TravelRouteLeg = {
+  fromTitle: string;
+  toTitle: string;
+  distanceKm: number;
+  estimatedMinutes: number;
+  googleMapsUrl: string;
+  mapboxDirectionsUrl: string;
+};
+
+export type TravelRouteOptimization = {
+  planId: number;
+  dayNumber: number;
+  mode: TravelMode;
+  totalDistanceKm: number;
+  estimatedMinutes: number;
+  optimizedItems: TravelPlanItem[];
+  legs: TravelRouteLeg[];
+};
+
+export type CreateTravelPlanInput = {
+  title: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+export type UpdateTravelPlanInput = {
+  title?: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  isPublic?: boolean;
+};
+
+export type CreateTravelPlanItemInput = {
+  dayNumber: number;
+  itemType: TravelPlanItemType;
+  referenceId?: string;
+  title?: string;
+  locationName?: string;
+  latitude?: number;
+  longitude?: number;
+  startTime?: string;
+  endTime?: string;
+  note?: string;
+  reminderAt?: string;
+  sortOrder?: number;
+};
+
+export type UpdateTravelPlanItemInput = Partial<CreateTravelPlanItemInput>;
+
+export const travelApi = {
+  async listPlans() {
+    return request<TravelPlanSummary[]>('/api/travel-plans', { method: 'GET' }, { auth: true });
+  },
+
+  async createPlan(input: CreateTravelPlanInput) {
+    return request<TravelPlanDetail>(
+      '/api/travel-plans',
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
+  async getPlan(planId: number) {
+    return request<TravelPlanDetail>(`/api/travel-plans/${planId}`, { method: 'GET' }, { auth: true });
+  },
+
+  async updatePlan(planId: number, input: UpdateTravelPlanInput) {
+    return request<TravelPlanDetail>(
+      `/api/travel-plans/${planId}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
+  async deletePlan(planId: number) {
+    return request<{ message: string }>(
+      `/api/travel-plans/${planId}`,
+      { method: 'DELETE' },
+      { auth: true }
+    );
+  },
+
+  async addItem(planId: number, input: CreateTravelPlanItemInput) {
+    return request<TravelPlanItem>(
+      `/api/travel-plans/${planId}/items`,
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
+  async updateItem(planId: number, itemId: number, input: UpdateTravelPlanItemInput) {
+    return request<TravelPlanItem>(
+      `/api/travel-plans/${planId}/items/${itemId}`,
+      { method: 'PUT', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
+  async deleteItem(planId: number, itemId: number) {
+    return request<{ message: string }>(
+      `/api/travel-plans/${planId}/items/${itemId}`,
+      { method: 'DELETE' },
+      { auth: true }
+    );
+  },
+
+  async sharePlan(planId: number) {
+    return request<TravelPlanShare>(
+      `/api/travel-plans/${planId}/share`,
+      { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async getSharedPlan(shareToken: string) {
+    return request<TravelPlanDetail>(
+      `/api/travel-plans/shared/${encodeURIComponent(shareToken)}`,
+      { method: 'GET' },
+      { auth: false }
+    );
+  },
+
+  async optimizeRoute(planId: number, input: { dayNumber: number; mode?: TravelMode; startLatitude?: number; startLongitude?: number }) {
+    return request<TravelRouteOptimization>(
+      `/api/travel-plans/${planId}/optimize-route`,
+      { method: 'POST', body: JSON.stringify(input) },
       { auth: true }
     );
   },

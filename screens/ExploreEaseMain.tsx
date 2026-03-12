@@ -17,8 +17,11 @@ import ProfilePreferencesPrivacyPanel from './ProfilePreferencesPrivacyPanel';
 import EventManagementPanel from './EventManagementPanel';
 import CommunityReviewsPanel from './CommunityReviewsPanel';
 import NotificationsPanel from './NotificationsPanel';
+import AdminDashboardPanel from './AdminDashboardPanel';
+import TravelPlanningPanel from './TravelPlanningPanel';
+import { sessionStore } from '../services/backend';
 
-type TabKey = 'discover' | 'events' | 'notifications' | 'community' | 'offline' | 'profile';
+type TabKey = 'discover' | 'events' | 'travel' | 'notifications' | 'community' | 'offline' | 'profile' | 'admin';
 
 type Props = {
   onLoggedOut: () => void;
@@ -27,19 +30,25 @@ type Props = {
 const { width } = Dimensions.get('window');
 const IS_WIDE = width >= 900;
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'discover', label: 'Discover' },
-  { key: 'events', label: 'Events' },
-  { key: 'notifications', label: 'Notifications' },
-  { key: 'community', label: 'Reviews' },
-  { key: 'offline', label: 'Offline' },
-  { key: 'profile', label: 'Profile' },
-];
-
 const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const [activeTab, setActiveTab] = useState<TabKey>('discover');
   const [searchText, setSearchText] = useState('');
   const [offlineMode, setOfflineMode] = useState(false);
+  const currentUser = sessionStore.get()?.user;
+  const isAdmin = !!(currentUser?.isSuperuser || currentUser?.isStaff);
+  const tabs = useMemo<{ key: TabKey; label: string }[]>(
+    () => [
+      { key: 'discover', label: 'Discover' },
+      { key: 'events', label: 'Events' },
+      { key: 'travel', label: 'Travel Plan' },
+      { key: 'notifications', label: 'Notifications' },
+      { key: 'community', label: 'Reviews' },
+      { key: 'offline', label: 'Offline' },
+      ...(isAdmin ? [{ key: 'admin' as TabKey, label: 'Admin' }] : []),
+      { key: 'profile', label: 'Profile' },
+    ],
+    [isAdmin]
+  );
 
   const offlinePacks = useMemo(
     () => [
@@ -104,6 +113,16 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
     </Animated.View>
   );
 
+  const renderTravelPlanning = () => (
+    <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Travel Planning</Text>
+        <Text style={styles.sectionMeta}>Day-wise itinerary, sharing, notes, reminders, route optimization</Text>
+      </View>
+      <TravelPlanningPanel />
+    </Animated.View>
+  );
+
   const renderOffline = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
@@ -152,11 +171,23 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
     </Animated.View>
   );
 
+  const renderAdmin = () => (
+    <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Admin Dashboard</Text>
+        <Text style={styles.sectionMeta}>Users, events, reviews moderation, analytics</Text>
+      </View>
+      <AdminDashboardPanel />
+    </Animated.View>
+  );
+
   const renderContent = () => {
     if (activeTab === 'events') return renderEvents();
+    if (activeTab === 'travel') return renderTravelPlanning();
     if (activeTab === 'notifications') return renderNotifications();
     if (activeTab === 'community') return renderCommunity();
     if (activeTab === 'offline') return renderOffline();
+    if (activeTab === 'admin' && isAdmin) return renderAdmin();
     if (activeTab === 'profile') return renderProfile();
     return renderDiscover();
   };

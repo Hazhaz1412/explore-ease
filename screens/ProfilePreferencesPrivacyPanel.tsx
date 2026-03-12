@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { AuthSession, Interest, TravelStyle, authApi, privacyApi, sessionStore, userApi } from '../services/backend';
+import { AuthSession, Interest, TravelStyle, UserPreferences, UserProfile, authApi, privacyApi, sessionStore, userApi } from '../services/backend';
+import {
+  cacheProfileSnapshot,
+  enqueueSyncOperation,
+  getSyncStatus,
+  isLikelyOfflineError,
+  loadProfileSnapshot,
+  startOfflineSync,
+  subscribeSyncStatus,
+  type SyncStatus,
+} from '../services/offlineSync';
 
 type Props = {
   onLoggedOut: () => void;
@@ -85,6 +95,37 @@ const normalizePreferences = (payload: Record<string, any> | null | undefined): 
   darkMode: !!payload?.darkMode,
 });
 
+const profileFormToPayload = (profile: ProfileForm): Record<string, unknown> => ({
+  firstName: profile.firstName.trim(),
+  lastName: profile.lastName.trim(),
+  age: profile.age.trim() ? Number(profile.age.trim()) : null,
+  gender: profile.gender.trim(),
+  travelStyle: profile.travelStyle || null,
+  profilePictureUrl: profile.profilePictureUrl.trim(),
+  interests: profile.interests,
+  bio: profile.bio.trim(),
+});
+
+const profileFormToUserProfile = (profile: ProfileForm): UserProfile => {
+  const payload = profileFormToPayload(profile);
+  return {
+    firstName: (payload.firstName as string) || null,
+    lastName: (payload.lastName as string) || null,
+    age: typeof payload.age === 'number' ? payload.age : null,
+    gender: (payload.gender as string) || null,
+    travelStyle: (payload.travelStyle as string | null) || null,
+    profilePictureUrl: (payload.profilePictureUrl as string) || null,
+    interests: (payload.interests as Interest[]) || [],
+    bio: (payload.bio as string) || null,
+  };
+};
+
+const preferencesFormToPayload = (preferences: PreferencesForm): UserPreferences => ({
+  ...preferences,
+  language: preferences.language.trim() || 'en',
+  timezone: preferences.timezone.trim() || 'UTC',
+});
+
 const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
   const [session, setSession] = useState<AuthSession | null>(sessionStore.get());
   const [profile, setProfile] = useState<ProfileForm>(defaultProfile);
@@ -94,6 +135,8 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
   const [privacyPreview, setPrivacyPreview] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
 
   const profileName = useMemo(() => {
     const value = `${profile.firstName} ${profile.lastName}`.trim();
@@ -141,9 +184,18 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
       const [profileRes, preferencesRes] = await Promise.all([userApi.getProfile(), userApi.getPreferences()]);
       setProfile(normalizeProfile(profileRes as Record<string, any>));
       setPreferences(normalizePreferences(preferencesRes as Record<string, any>));
+      setLoadedFromCache(false);
+      await cacheProfileSnapshot(profileRes as UserProfile, preferencesRes as UserPreferences);
     } catch (error: any) {
       if (!handleAuthError(error)) {
-        Alert.alert('Error', error?.message || 'Cannot load profile data');
+        const cached = await loadProfileSnapshot();
+        if (cached) {
+          setProfile(normalizeProfile(cached.profile as Record<string, any>));
+          setPreferences(normalizePreferences(cached.preferences as Record<string, any>));
+          setLoadedFromCache(true);
+        } else {
+          Alert.alert('Error', error?.message || 'Cannot load profile data');
+        }
       }
     } finally {
       setLoading(false);
@@ -151,7 +203,10 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
   };
 
   useEffect(() => {
+    startOfflineSync();
+    const unsubscribe = subscribeSyncStatus(setSyncStatus);
     void loadData();
+    return unsubscribe;
   }, []);
 
   const toggleInterest = (interest: Interest) => {
@@ -170,32 +225,62 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
         throw new Error('Age must be between 1 and 120');
       }
 
-      const payload = {
-        firstName: profile.firstName.trim(),
-        lastName: profile.lastName.trim(),
-        age,
-        gender: profile.gender.trim(),
-        travelStyle: profile.travelStyle || null,
-        profilePictureUrl: profile.profilePictureUrl.trim(),
-        interests: profile.interests,
-        bio: profile.bio.trim(),
-      };
+      const payload = profileFormToPayload(profile);
 
-      const updated = await userApi.updateProfile(payload);
-      setProfile(normalizeProfile(updated as Record<string, any>));
-      Alert.alert('Saved', 'Profile updated');
+      if (!syncStatus.isOnline) {
+        await enqueueSyncOperation({ type: 'USER_PROFILE_UPDATE', payload });
+        await cacheProfileSnapshot(profileFormToUserProfile(profile), preferencesFormToPayload(preferences));
+        setLoadedFromCache(true);
+        Alert.alert('Offline saved', 'Profile saved locally and will sync when online.');
+        return;
+      }
+
+      try {
+        const updated = await userApi.updateProfile(payload);
+        setProfile(normalizeProfile(updated as Record<string, any>));
+        setLoadedFromCache(false);
+        await cacheProfileSnapshot(updated as UserProfile, preferencesFormToPayload(preferences));
+        Alert.alert('Saved', 'Profile updated');
+      } catch (error: any) {
+        if (isLikelyOfflineError(error)) {
+          await enqueueSyncOperation({ type: 'USER_PROFILE_UPDATE', payload });
+          await cacheProfileSnapshot(profileFormToUserProfile(profile), preferencesFormToPayload(preferences));
+          setLoadedFromCache(true);
+          Alert.alert('Offline saved', 'Profile saved locally and will sync when online.');
+          return;
+        }
+        throw error;
+      }
     });
 
   const savePreferences = () =>
     run(async () => {
-      const payload = {
-        ...preferences,
-        language: preferences.language.trim() || 'en',
-        timezone: preferences.timezone.trim() || 'UTC',
-      };
-      const updated = await userApi.updatePreferences(payload);
-      setPreferences(normalizePreferences(updated as Record<string, any>));
-      Alert.alert('Saved', 'Preferences updated');
+      const payload = preferencesFormToPayload(preferences);
+
+      if (!syncStatus.isOnline) {
+        await enqueueSyncOperation({ type: 'USER_PREFERENCES_UPDATE', payload });
+        await cacheProfileSnapshot(profileFormToUserProfile(profile), payload);
+        setLoadedFromCache(true);
+        Alert.alert('Offline saved', 'Preferences saved locally and will sync when online.');
+        return;
+      }
+
+      try {
+        const updated = await userApi.updatePreferences(payload);
+        setPreferences(normalizePreferences(updated as Record<string, any>));
+        setLoadedFromCache(false);
+        await cacheProfileSnapshot(profileFormToUserProfile(profile), updated as UserPreferences);
+        Alert.alert('Saved', 'Preferences updated');
+      } catch (error: any) {
+        if (isLikelyOfflineError(error)) {
+          await enqueueSyncOperation({ type: 'USER_PREFERENCES_UPDATE', payload });
+          await cacheProfileSnapshot(profileFormToUserProfile(profile), payload);
+          setLoadedFromCache(true);
+          Alert.alert('Offline saved', 'Preferences saved locally and will sync when online.');
+          return;
+        }
+        throw error;
+      }
     });
 
   const showDataExport = () =>
@@ -262,6 +347,19 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
 
   return (
     <View style={styles.panel}>
+      {(!syncStatus.isOnline || syncStatus.pendingCount > 0 || loadedFromCache) && (
+        <View style={styles.syncBanner}>
+          <Text style={styles.syncBannerText}>
+            {!syncStatus.isOnline
+              ? 'Offline mode: profile data is loaded from local cache.'
+              : loadedFromCache
+                ? 'Using cached profile data.'
+                : 'Connection restored.'}
+            {syncStatus.pendingCount > 0 ? ` Pending sync: ${syncStatus.pendingCount}.` : ''}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Identity & Security</Text>
         <InfoRow label="Signed in as" value={session.user.email} />
@@ -463,6 +561,19 @@ const Button = ({
 const styles = StyleSheet.create({
   panel: {
     gap: 12,
+  },
+  syncBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2e3442',
+    backgroundColor: '#111826',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  syncBannerText: {
+    color: '#b8c3d9',
+    fontSize: 12,
+    lineHeight: 18,
   },
   card: {
     borderRadius: 16,

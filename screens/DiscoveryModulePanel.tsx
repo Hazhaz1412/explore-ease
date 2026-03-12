@@ -35,6 +35,18 @@ import {
   discoveryApi,
   locationApi,
 } from '../services/backend';
+import {
+  cacheDiscoverySnapshot,
+  enqueueSyncOperation,
+  getSyncStatus,
+  isLikelyOfflineError,
+  loadDiscoverySnapshot,
+  loadRecentSearches,
+  recordRecentSearch,
+  startOfflineSync,
+  subscribeSyncStatus,
+  type SyncStatus,
+} from '../services/offlineSync';
 
 /* ────────────── Native Map lazy load ────────────── */
 const MapsModule: any = (() => {
@@ -150,6 +162,10 @@ const DiscoveryModulePanel = () => {
 
   /* ── location reference ── */
   const [refLocation, setRefLocation] = useState<{ latitude?: number; longitude?: number }>({});
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [usingOfflineData, setUsingOfflineData] = useState(false);
+  const [cacheReady, setCacheReady] = useState(false);
 
   const distanceValue = useMemo(() => {
     const parsed = Number(maxDistanceKm.trim());
@@ -171,28 +187,43 @@ const DiscoveryModulePanel = () => {
   /* ── data loaders ── */
   const loadBrowse = useCallback(
     async (cat?: DiscoveryCategory, searchQuery?: string, pageNum = 0) => {
-      const payload = await discoveryApi.browse({
-        query: (searchQuery ?? query).trim() || undefined,
-        category: cat ?? activeCategory,
-        minRating,
-        maxPriceLevel,
-        minPopularity,
-        maxDistanceKm: distanceValue,
-        sort: sortBy,
-        latitude: refLocation.latitude,
-        longitude: refLocation.longitude,
-        limit: 24,
-        page: pageNum,
-      });
-      if (pageNum === 0) {
-        setItems(payload.items || []);
-      } else {
-        setItems((prev) => [...prev, ...(payload.items || [])]);
+      try {
+        const payload = await discoveryApi.browse({
+          query: (searchQuery ?? query).trim() || undefined,
+          category: cat ?? activeCategory,
+          minRating,
+          maxPriceLevel,
+          minPopularity,
+          maxDistanceKm: distanceValue,
+          sort: sortBy,
+          latitude: refLocation.latitude,
+          longitude: refLocation.longitude,
+          limit: 24,
+          page: pageNum,
+        });
+        if (pageNum === 0) {
+          setItems(payload.items || []);
+        } else {
+          setItems((prev) => [...prev, ...(payload.items || [])]);
+        }
+        setSuggestions(payload.autocompleteSuggestions || []);
+        setPage(payload.page ?? pageNum);
+        setHasNext(payload.hasNext ?? false);
+        setTotalItems(payload.totalItems ?? payload.items?.length ?? 0);
+        setUsingOfflineData(false);
+      } catch (error: unknown) {
+        const cached = await loadDiscoverySnapshot();
+        if (cached && pageNum === 0) {
+          setItems(cached.lastBrowseItems || []);
+          setSuggestions(cached.lastSuggestions || []);
+          setPage(0);
+          setHasNext(false);
+          setTotalItems((cached.lastBrowseItems || []).length);
+          setUsingOfflineData(true);
+          return;
+        }
+        throw error;
       }
-      setSuggestions(payload.autocompleteSuggestions || []);
-      setPage(payload.page ?? pageNum);
-      setHasNext(payload.hasNext ?? false);
-      setTotalItems(payload.totalItems ?? payload.items?.length ?? 0);
     },
     [query, activeCategory, minRating, maxPriceLevel, minPopularity, distanceValue, sortBy, refLocation]
   );
@@ -238,48 +269,114 @@ const DiscoveryModulePanel = () => {
       setFeaturedAttractions(attractions.items || []);
       setFeaturedCuisines(cuisines.items || []);
       setFeaturedActivities(activities.items || []);
-    } catch {
-      /* silent – featured sections are optional */
+      setUsingOfflineData(false);
+    } catch (error: unknown) {
+      const cached = await loadDiscoverySnapshot();
+      if (cached) {
+        setFeaturedAttractions(cached.featuredAttractions || []);
+        setFeaturedCuisines(cached.featuredCuisines || []);
+        setFeaturedActivities(cached.featuredActivities || []);
+        if (
+          (cached.featuredAttractions || []).length > 0 ||
+          (cached.featuredCuisines || []).length > 0 ||
+          (cached.featuredActivities || []).length > 0
+        ) {
+          setUsingOfflineData(true);
+          return;
+        }
+      }
+      if (!isLikelyOfflineError(error)) {
+        console.warn('Featured load error:', error);
+      }
     } finally {
       setLoadingFeatured(false);
     }
   }, [refLocation]);
 
   const loadBookmarks = useCallback(async () => {
-    const payload = await discoveryApi.getBookmarks({
-      latitude: refLocation.latitude,
-      longitude: refLocation.longitude,
-    });
-    setBookmarks(payload || []);
+    try {
+      const payload = await discoveryApi.getBookmarks({
+        latitude: refLocation.latitude,
+        longitude: refLocation.longitude,
+      });
+      setBookmarks(payload || []);
+      setUsingOfflineData(false);
+    } catch (error: unknown) {
+      const cached = await loadDiscoverySnapshot();
+      if (cached) {
+        setBookmarks(cached.bookmarks || []);
+        if ((cached.bookmarks || []).length > 0) {
+          setUsingOfflineData(true);
+          return;
+        }
+      }
+      throw error;
+    }
   }, [refLocation]);
 
   const refreshAll = () =>
     run(async () => {
+      const trimmed = query.trim();
+      if (trimmed) {
+        const latestRecent = await recordRecentSearch('discovery', trimmed);
+        setRecentSearches(latestRecent);
+      }
       await Promise.all([loadBrowse(), loadBookmarks()]);
     });
 
   /* ── bookmark toggle ── */
   const toggleBookmark = async (item: DiscoveryItem) => {
-    try {
-      if (item.bookmarked) {
-        await discoveryApi.removeBookmark(item.id);
-      } else {
-        await discoveryApi.addBookmark(item.id);
-      }
-      const updateBookmark = (entry: DiscoveryItem) =>
-        entry.id === item.id ? { ...entry, bookmarked: !entry.bookmarked } : entry;
+    const nextBookmarked = !item.bookmarked;
+    const updateBookmark = (entry: DiscoveryItem) =>
+      entry.id === item.id ? { ...entry, bookmarked: nextBookmarked } : entry;
 
-      setItems((prev) => prev.map(updateBookmark));
-      setFeaturedAttractions((prev) => prev.map(updateBookmark));
-      setFeaturedCuisines((prev) => prev.map(updateBookmark));
-      setFeaturedActivities((prev) => prev.map(updateBookmark));
+    setItems((prev) => prev.map(updateBookmark));
+    setFeaturedAttractions((prev) => prev.map(updateBookmark));
+    setFeaturedCuisines((prev) => prev.map(updateBookmark));
+    setFeaturedActivities((prev) => prev.map(updateBookmark));
+    setBookmarks((prev) =>
+      nextBookmarked ? [{ ...item, bookmarked: true }, ...prev.filter((e) => e.id !== item.id)] : prev.filter((e) => e.id !== item.id)
+    );
+    setDetail((prev) =>
+      prev && prev.item.id === item.id ? { ...prev, item: { ...prev.item, bookmarked: nextBookmarked } } : prev
+    );
+
+    const queuedOperation =
+      nextBookmarked
+        ? ({ type: 'DISCOVERY_BOOKMARK_ADD', placeId: item.id } as const)
+        : ({ type: 'DISCOVERY_BOOKMARK_REMOVE', placeId: item.id } as const);
+
+    if (!syncStatus.isOnline) {
+      await enqueueSyncOperation(queuedOperation);
+      return;
+    }
+
+    try {
+      if (nextBookmarked) {
+        await discoveryApi.addBookmark(item.id);
+      } else {
+        await discoveryApi.removeBookmark(item.id);
+      }
+      setUsingOfflineData(false);
+    } catch (error: any) {
+      if (isLikelyOfflineError(error)) {
+        await enqueueSyncOperation(queuedOperation);
+        return;
+      }
+
+      // Rollback optimistic change for non-network errors.
+      const rollbackBookmark = (entry: DiscoveryItem) =>
+        entry.id === item.id ? { ...entry, bookmarked: item.bookmarked } : entry;
+      setItems((prev) => prev.map(rollbackBookmark));
+      setFeaturedAttractions((prev) => prev.map(rollbackBookmark));
+      setFeaturedCuisines((prev) => prev.map(rollbackBookmark));
+      setFeaturedActivities((prev) => prev.map(rollbackBookmark));
       setBookmarks((prev) =>
-        item.bookmarked ? prev.filter((e) => e.id !== item.id) : [{ ...item, bookmarked: true }, ...prev]
+        item.bookmarked ? [{ ...item, bookmarked: true }, ...prev.filter((e) => e.id !== item.id)] : prev.filter((e) => e.id !== item.id)
       );
       setDetail((prev) =>
-        prev && prev.item.id === item.id ? { ...prev, item: { ...prev.item, bookmarked: !item.bookmarked } } : prev
+        prev && prev.item.id === item.id ? { ...prev, item: { ...prev.item, bookmarked: item.bookmarked } } : prev
       );
-    } catch (error: any) {
       Alert.alert('Error', error?.message || 'Bookmark action failed');
     }
   };
@@ -308,6 +405,8 @@ const DiscoveryModulePanel = () => {
 
   /* ── suggestion select ── */
   const applySuggestion = async (value: string) => {
+    const latestRecent = await recordRecentSearch('discovery', value);
+    setRecentSearches(latestRecent);
     setQuery(value);
     setShowSuggestions(false);
     setPage(0);
@@ -332,6 +431,34 @@ const DiscoveryModulePanel = () => {
 
   /* ── bootstrap ── */
   useEffect(() => {
+    startOfflineSync();
+    const unsubscribe = subscribeSyncStatus(setSyncStatus);
+    void (async () => {
+      const [cachedDiscovery, cachedSearches] = await Promise.all([
+        loadDiscoverySnapshot(),
+        loadRecentSearches('discovery'),
+      ]);
+      if (cachedDiscovery) {
+        setBookmarks(cachedDiscovery.bookmarks || []);
+        setFeaturedAttractions(cachedDiscovery.featuredAttractions || []);
+        setFeaturedCuisines(cachedDiscovery.featuredCuisines || []);
+        setFeaturedActivities(cachedDiscovery.featuredActivities || []);
+        setItems(cachedDiscovery.lastBrowseItems || []);
+        setSuggestions(cachedDiscovery.lastSuggestions || []);
+        if (
+          (cachedDiscovery.bookmarks || []).length > 0 ||
+          (cachedDiscovery.lastBrowseItems || []).length > 0 ||
+          (cachedDiscovery.featuredAttractions || []).length > 0 ||
+          (cachedDiscovery.featuredCuisines || []).length > 0 ||
+          (cachedDiscovery.featuredActivities || []).length > 0
+        ) {
+          setUsingOfflineData(true);
+        }
+      }
+      setRecentSearches(cachedSearches);
+      setCacheReady(true);
+    })();
+
     (async () => {
       try {
         const current = await locationApi.getCurrentLocation();
@@ -340,7 +467,32 @@ const DiscoveryModulePanel = () => {
         setRefLocation({});
       }
     })();
+    return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!cacheReady) return;
+    void cacheDiscoverySnapshot({
+      bookmarks,
+      featuredAttractions,
+      featuredCuisines,
+      featuredActivities,
+      lastBrowseItems: items,
+      lastBrowseQuery: query,
+      lastBrowseCategory: activeCategory,
+      lastSuggestions: suggestions,
+    });
+  }, [
+    cacheReady,
+    bookmarks,
+    featuredAttractions,
+    featuredCuisines,
+    featuredActivities,
+    items,
+    query,
+    activeCategory,
+    suggestions,
+  ]);
 
   useEffect(() => {
     void refreshAll();
@@ -354,16 +506,26 @@ const DiscoveryModulePanel = () => {
       setSuggestions([]);
       return;
     }
+    if (!syncStatus.isOnline) {
+      const localMatches = recentSearches
+        .filter((item) => item.toLowerCase().includes(trimmed.toLowerCase()))
+        .slice(0, 6);
+      setSuggestions(localMatches);
+      return;
+    }
     const timer = setTimeout(async () => {
       try {
         const payload = await discoveryApi.suggestions(trimmed, 6);
         setSuggestions(payload || []);
       } catch {
-        setSuggestions([]);
+        const localMatches = recentSearches
+          .filter((item) => item.toLowerCase().includes(trimmed.toLowerCase()))
+          .slice(0, 6);
+        setSuggestions(localMatches);
       }
     }, 250);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, recentSearches, syncStatus.isOnline]);
 
   const detailItem = detail?.item || null;
   const isAllCategory = activeCategory === 'ALL';
@@ -376,6 +538,19 @@ const DiscoveryModulePanel = () => {
         <SegmentBtn label="Browse" active={activeView === 'browse'} onPress={() => setActiveView('browse')} />
         <SegmentBtn label="Saved" active={activeView === 'saved'} onPress={() => setActiveView('saved')} />
       </View>
+
+      {(!syncStatus.isOnline || syncStatus.pendingCount > 0 || usingOfflineData) && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            {!syncStatus.isOnline
+              ? 'Offline mode: using cached attractions and saved items.'
+              : usingOfflineData
+                ? 'Showing cached data while waiting for fresh content.'
+                : 'Connection restored.'}
+            {syncStatus.pendingCount > 0 ? ` Pending sync: ${syncStatus.pendingCount}.` : ''}
+          </Text>
+        </View>
+      )}
 
       {/* ─── Search bar ─── */}
       <View style={styles.searchCard}>
@@ -964,6 +1139,19 @@ const Chip = ({ label, active, onPress }: { label: string; active: boolean; onPr
 /* ════════════════════════════════════════════════════════════════════════════ */
 const styles = StyleSheet.create({
   wrapper: { gap: 12 },
+  offlineBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2e3442',
+    backgroundColor: '#111826',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  offlineBannerText: {
+    color: '#b8c3d9',
+    fontSize: 12,
+    lineHeight: 18,
+  },
 
   /* ── top switch ── */
   topSwitch: { flexDirection: 'row', gap: 8 },

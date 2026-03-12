@@ -20,6 +20,16 @@ import {
   EventType,
   CreateEventInput,
 } from '../services/backend';
+import {
+  cacheEventsSnapshot,
+  enqueueSyncOperation,
+  getSyncStatus,
+  isLikelyOfflineError,
+  loadEventsSnapshot,
+  startOfflineSync,
+  subscribeSyncStatus,
+  type SyncStatus,
+} from '../services/offlineSync';
 
 const { width } = Dimensions.get('window');
 
@@ -420,6 +430,9 @@ const EventManagementPanel: React.FC = () => {
   // Countdown timer
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [countdownTick, setCountdownTick] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
+  const [usingOfflineData, setUsingOfflineData] = useState(false);
+  const [cacheReady, setCacheReady] = useState(false);
 
   // ── Fetch ──
   const fetchEvents = useCallback(
@@ -445,7 +458,19 @@ const EventManagementPanel: React.FC = () => {
         setPage(res.page ?? pageNum);
         setHasNext(res.hasNext ?? false);
         setTotalEvents(res.total ?? res.events?.length ?? 0);
+        setUsingOfflineData(false);
       } catch (e: any) {
+        if (pageNum === 0) {
+          const cached = await loadEventsSnapshot();
+          if (cached) {
+            setEvents(cached.events || []);
+            setPage(cached.page ?? 0);
+            setHasNext(false);
+            setTotalEvents(cached.total ?? (cached.events || []).length);
+            setUsingOfflineData(true);
+            return;
+          }
+        }
         console.warn('Event fetch error:', e?.message || e);
       } finally {
         setLoading(false);
@@ -468,8 +493,51 @@ const EventManagementPanel: React.FC = () => {
   }, [loadingMore, hasNext, fetchEvents, page]);
 
   useEffect(() => {
+    startOfflineSync();
+    const unsubscribe = subscribeSyncStatus(setSyncStatus);
+    void (async () => {
+      const cached = await loadEventsSnapshot();
+      if (cached) {
+        setEvents(cached.events || []);
+        setPage(cached.page ?? 0);
+        setHasNext(false);
+        setTotalEvents(cached.total ?? (cached.events || []).length);
+        setUsingOfflineData(true);
+      }
+      setCacheReady(true);
+    })();
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  useEffect(() => {
+    if (!cacheReady) return;
+    void cacheEventsSnapshot({
+      events,
+      page,
+      hasNext,
+      total: totalEvents,
+      filters: {
+        status: statusFilter,
+        type: typeFilter,
+        pricing: pricingFilter,
+        searchQuery,
+      },
+    });
+  }, [
+    cacheReady,
+    events,
+    page,
+    hasNext,
+    totalEvents,
+    statusFilter,
+    typeFilter,
+    pricingFilter,
+    searchQuery,
+  ]);
 
   // Countdown timer (ticks every 30s to update countdown display)
   useEffect(() => {
@@ -498,15 +566,37 @@ const EventManagementPanel: React.FC = () => {
   };
 
   const handleBookmark = async (ev: EventItem) => {
+    const nextBookmarked = !ev.bookmarked;
+    setEvents((prev) =>
+      prev.map((item) => (item.id === ev.id ? { ...item, bookmarked: nextBookmarked } : item))
+    );
+    if (selectedEvent?.id === ev.id) {
+      setSelectedEvent((prev) => (prev ? { ...prev, bookmarked: nextBookmarked } : prev));
+    }
+
+    if (!syncStatus.isOnline) {
+      await enqueueSyncOperation({ type: 'EVENT_BOOKMARK_TOGGLE', eventId: ev.id });
+      return;
+    }
+
     try {
       const res = await eventApi.toggleBookmark(ev.id);
-      setEvents((prev) =>
-        prev.map((e) => (e.id === ev.id ? { ...e, bookmarked: res.bookmarked } : e))
-      );
+      setEvents((prev) => prev.map((e) => (e.id === ev.id ? { ...e, bookmarked: res.bookmarked } : e)));
       if (selectedEvent?.id === ev.id) {
         setSelectedEvent((prev) => (prev ? { ...prev, bookmarked: res.bookmarked } : prev));
       }
+      setUsingOfflineData(false);
     } catch (e: any) {
+      if (isLikelyOfflineError(e)) {
+        await enqueueSyncOperation({ type: 'EVENT_BOOKMARK_TOGGLE', eventId: ev.id });
+        return;
+      }
+      setEvents((prev) =>
+        prev.map((item) => (item.id === ev.id ? { ...item, bookmarked: ev.bookmarked } : item))
+      );
+      if (selectedEvent?.id === ev.id) {
+        setSelectedEvent((prev) => (prev ? { ...prev, bookmarked: ev.bookmarked } : prev));
+      }
       Alert.alert('Error', e?.message || 'Could not toggle bookmark');
     }
   };
@@ -871,6 +961,19 @@ const EventManagementPanel: React.FC = () => {
   // ── Main render ──
   return (
     <View style={styles.container}>
+      {(!syncStatus.isOnline || syncStatus.pendingCount > 0 || usingOfflineData) && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            {!syncStatus.isOnline
+              ? 'Offline mode: showing cached events.'
+              : usingOfflineData
+                ? 'Showing cached events while refreshing.'
+                : 'Connection restored.'}
+            {syncStatus.pendingCount > 0 ? ` Pending sync: ${syncStatus.pendingCount}.` : ''}
+          </Text>
+        </View>
+      )}
+
       {/* Search + filter toggle */}
       <View style={styles.searchRow}>
         <TextInput
@@ -980,6 +1083,20 @@ const DetailRow: React.FC<{ label: string; value: string }> = ({ label, value })
 const styles = StyleSheet.create({
   container: {
     marginTop: 4,
+  },
+  offlineBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2e3442',
+    backgroundColor: '#111826',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  offlineBannerText: {
+    color: '#b8c3d9',
+    fontSize: 12,
+    lineHeight: 18,
   },
 
   // Search
