@@ -174,6 +174,7 @@ const refreshSessionToken = async (): Promise<boolean> => {
 
     const payload = await response.json();
     activeSession = normalizeSession(payload);
+    persistSession(activeSession);
     return true;
   })();
 
@@ -184,15 +185,74 @@ const refreshSessionToken = async (): Promise<boolean> => {
   }
 };
 
+const SESSION_KEY = 'exploreease.session.v1';
+
+// Synchronous restore from localStorage for web (available immediately)
+const restoreSessionSync = (): AuthSession | null => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(SESSION_KEY);
+      if (raw) return JSON.parse(raw) as AuthSession;
+    }
+  } catch {}
+  return null;
+};
+
+const persistSession = (session: AuthSession | null) => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (session) {
+        window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      } else {
+        window.localStorage.removeItem(SESSION_KEY);
+      }
+    }
+  } catch {}
+
+  // Also try AsyncStorage for mobile
+  try {
+    const asyncStorageModule = require('@react-native-async-storage/async-storage');
+    const storage = asyncStorageModule?.default || asyncStorageModule;
+    if (storage) {
+      if (session) {
+        storage.setItem(SESSION_KEY, JSON.stringify(session));
+      } else {
+        storage.removeItem(SESSION_KEY);
+      }
+    }
+  } catch {}
+};
+
+// Try restoring session immediately on module load
+activeSession = restoreSessionSync();
+
 export const sessionStore = {
   get() {
     return activeSession;
   },
   set(session: AuthSession | null) {
     activeSession = session;
+    persistSession(session);
   },
   clear() {
     activeSession = null;
+    persistSession(null);
+  },
+  /** Async restore for mobile (AsyncStorage) — call from App.tsx on mount */
+  async restoreAsync(): Promise<boolean> {
+    if (activeSession) return true;
+    try {
+      const asyncStorageModule = require('@react-native-async-storage/async-storage');
+      const storage = asyncStorageModule?.default || asyncStorageModule;
+      if (storage) {
+        const raw = await storage.getItem(SESSION_KEY);
+        if (raw) {
+          activeSession = JSON.parse(raw) as AuthSession;
+          return true;
+        }
+      }
+    } catch {}
+    return false;
   },
 };
 
@@ -257,6 +317,18 @@ export const authApi = {
     const session = normalizeSession(payload);
     sessionStore.set(session);
     return session;
+  },
+
+  async isGoogleLinked() {
+    return request<boolean>('/api/auth/google/linked', { method: 'GET' }, { auth: true });
+  },
+
+  async disconnectGoogle() {
+    return request<string>(
+      '/api/auth/google/disconnect',
+      { method: 'POST' },
+      { auth: true }
+    );
   },
 
   async logout() {
@@ -1314,4 +1386,300 @@ export const travelApi = {
       { auth: true }
     );
   },
+};
+
+// ─── Social Feature Types ────────────────────────────────────────────────────
+
+export type UserPublicProfile = {
+  id: number;
+  username: string;
+  profilePictureUrl: string | null;
+  bio: string | null;
+  followerCount: number;
+  followingCount: number;
+  followedByCurrentUser: boolean;
+};
+
+export type ActivityFeedItem = {
+  id: number;
+  actorId: number;
+  actorUsername: string;
+  actorProfilePictureUrl: string | null;
+  actionType: string;
+  targetType: string;
+  targetId: string;
+  targetName: string;
+  metadata: string | null;
+  createdAt: string;
+};
+
+export const socialApi = {
+  async follow(userId: number) {
+    return request<{ message: string }>(
+      `/api/social/follow/${userId}`,
+      { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async unfollow(userId: number) {
+    return request<{ message: string }>(
+      `/api/social/follow/${userId}`,
+      { method: 'DELETE' },
+      { auth: true }
+    );
+  },
+
+  async getFollowers(page = 0, size = 20) {
+    const query = buildQuery({ page, size });
+    return request<UserPublicProfile[]>(`/api/social/followers${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async getFollowing(page = 0, size = 20) {
+    const query = buildQuery({ page, size });
+    return request<UserPublicProfile[]>(`/api/social/following${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async searchUsers(query: string, limit = 10) {
+    const q = buildQuery({ query, limit });
+    return request<UserPublicProfile[]>(`/api/social/search${q}`, { method: 'GET' }, { auth: true });
+  },
+
+  async getUserProfile(userId: number) {
+    return request<UserPublicProfile>(`/api/social/user/${userId}`, { method: 'GET' }, { auth: true });
+  },
+
+  async getFeed(page = 0, size = 20) {
+    const query = buildQuery({ page, size });
+    return request<ActivityFeedItem[]>(`/api/social/feed${query}`, { method: 'GET' }, { auth: true });
+  },
+};
+
+// ─── Smart Search Types ──────────────────────────────────────────────────────
+
+export type SmartSearchInput = {
+  budget?: number;
+  mood?: string;
+  freeHours?: number;
+  maxDistanceKm?: number;
+  latitude?: number;
+  longitude?: number;
+  preferences?: string;
+};
+
+export type ItinerarySlot = {
+  order: number;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  placeId: string;
+  placeName: string;
+  category: string;
+  rating: number;
+  priceLevel: number;
+  distanceKm: number;
+  latitude: number;
+  longitude: number;
+  directionsUrl: string;
+  note: string;
+};
+
+export type ItineraryResult = {
+  totalHours: number;
+  startTime: string;
+  endTime: string;
+  mood: string;
+  slots: ItinerarySlot[];
+};
+
+export const smartSearchApi = {
+  async similarPlaces(placeId: string, limit = 6) {
+    const query = buildQuery({ limit });
+    return request<DiscoveryItem[]>(
+      `/api/discovery/similar/${encodeURIComponent(placeId)}${query}`,
+      { method: 'GET' },
+      { auth: true }
+    );
+  },
+
+  async smartSearch(input: SmartSearchInput) {
+    return request<DiscoveryItem[]>(
+      '/api/discovery/smart-search',
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
+  async generateItinerary(input: {
+    durationHours?: number;
+    startTime?: string;
+    mood?: string;
+    budget?: number;
+    latitude?: number;
+    longitude?: number;
+    maxDistanceKm?: number;
+  }) {
+    return request<ItineraryResult>(
+      '/api/discovery/itinerary',
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+};
+
+// ─── Direct Messaging Types ──────────────────────────────────────────────────
+
+export type DirectConversation = {
+  id: number;
+  peerId: number;
+  peerUsername: string;
+  peerProfilePictureUrl: string | null;
+  peerPublicKey: string | null;
+  lastMessageAt: string | null;
+  createdAt: string;
+};
+
+export type DirectMessageItem = {
+  id: number;
+  conversationId: number;
+  senderId: number;
+  senderName: string;
+  senderPublicKey: string | null;
+  kind: string;
+  ciphertext: string;
+  contentNonce: string;
+  encryptedKey: string | null;
+  keyNonce: string | null;
+  createdAt: string;
+};
+
+export const directMessageApi = {
+  async listConversations() {
+    return request<DirectConversation[]>('/api/dm/conversations', { method: 'GET' }, { auth: true });
+  },
+
+  async createConversation(userId: number) {
+    return request<DirectConversation>(
+      `/api/dm/conversations/${userId}`,
+      { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async getMessages(conversationId: number, limit = 50) {
+    const query = buildQuery({ limit });
+    return request<DirectMessageItem[]>(
+      `/api/dm/conversations/${conversationId}/messages${query}`,
+      { method: 'GET' },
+      { auth: true }
+    );
+  },
+
+  async sendMessage(conversationId: number, input: {
+    kind: string;
+    ciphertext: string;
+    contentNonce: string;
+    encryptedKeys: { userId: number; encryptedKey: string; keyNonce: string }[];
+  }) {
+    return request<DirectMessageItem>(
+      `/api/dm/conversations/${conversationId}/messages`,
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+};
+
+// ─── Event Chat Types ────────────────────────────────────────────────────────
+
+export type ChatMessageKind = 'TEXT' | 'IMAGE' | 'LOCATION';
+export type ChatScope = 'GROUP' | 'ORGANIZER' | 'DIRECT';
+
+export type ChatEncryptedKeyInput = {
+  userId: number;
+  encryptedKey: string;
+  keyNonce: string;
+};
+
+export type ChatPublicKeyResponse = {
+  publicKey: string;
+  updatedAt: string;
+};
+
+export type EventChatSummaryResponse = {
+  eventId: number;
+  title: string;
+  locationName: string | null;
+  startDate: string | null;
+  organizerId: number;
+  organizerUsername: string;
+  organizer: boolean;
+  participantCount: number;
+  pinnedCount: number;
+  lastGroupMessageAt: string | null;
+};
+
+export type ChatEventSummary = EventChatSummaryResponse;
+
+export type EventChatParticipantResponse = {
+  userId: number;
+  username: string;
+  role: string | null;
+  organizer: boolean;
+  currentUser: boolean;
+  directAllowed: boolean;
+  hasChatPublicKey: boolean;
+  publicKey: string | null;
+};
+
+export type ChatParticipant = EventChatParticipantResponse;
+
+export type ChatMessage = {
+  id: number;
+  eventId: number;
+  scope: string;
+  kind: ChatMessageKind;
+  senderId: number;
+  senderName: string;
+  senderPublicKey: string | null;
+  recipientId: number | null;
+  ciphertext: string;
+  contentNonce: string;
+  encryptedKey: string;
+  keyNonce: string;
+  createdAt: string;
+  pinned: boolean;
+  pinnedAt: string | null;
+  pinnedById: number | null;
+  pinnedByName: string | null;
+};
+
+export const chatApi = {
+  async getMyKey() {
+    return request<ChatPublicKeyResponse>('/api/chat/keys/me', { method: 'GET' }, { auth: true });
+  },
+  async upsertMyKey(publicKey: string) {
+    return request<ChatPublicKeyResponse>('/api/chat/keys/me', { method: 'PUT', body: JSON.stringify({ publicKey }) }, { auth: true });
+  },
+  async listEvents() {
+    return request<EventChatSummaryResponse[]>('/api/chat/events', { method: 'GET' }, { auth: true });
+  },
+  async getParticipants(eventId: number) {
+    return request<EventChatParticipantResponse[]>(`/api/chat/events/${eventId}/participants`, { method: 'GET' }, { auth: true });
+  },
+  async getMessages(args: { eventId: number; scope?: string; counterpartUserId?: number; limit?: number }) {
+    const q = buildQuery({ scope: args.scope || 'GROUP', counterpartUserId: args.counterpartUserId || '', limit: args.limit || 50 });
+    return request<ChatMessage[]>(`/api/chat/events/${args.eventId}/messages${q}`, { method: 'GET' }, { auth: true });
+  },
+  async getPinnedMessages(eventId: number) {
+    return request<ChatMessage[]>(`/api/chat/events/${eventId}/pins`, { method: 'GET' }, { auth: true });
+  },
+  async sendMessage(input: { eventId: number; scope?: string; counterpartUserId?: number | null; kind: ChatMessageKind; ciphertext: string; contentNonce: string; encryptedKeys: ChatEncryptedKeyInput[] }) {
+    return request<ChatMessage>(`/api/chat/events/${input.eventId}/messages`, { method: 'POST', body: JSON.stringify(input) }, { auth: true });
+  },
+  async pinMessage(eventId: number, messageId: number) {
+    return request<ChatMessage>(`/api/chat/events/${eventId}/messages/${messageId}/pin`, { method: 'POST' }, { auth: true });
+  },
+  async unpinMessage(eventId: number, messageId: number) {
+    return request<{ message: string }>(`/api/chat/events/${eventId}/messages/${messageId}/pin`, { method: 'DELETE' }, { auth: true });
+  }
 };

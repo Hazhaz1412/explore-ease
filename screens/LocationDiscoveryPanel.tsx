@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ImageBackground } from 'react-native';
 import { CalendarDays, Flame, Landmark, MapPin, Mountain, ShoppingBag, Trees, UtensilsCrossed } from 'lucide-react-native';
 import { LocationDiscovery, LocationRoute, LocationSnapshot, NearbyPlace, locationApi } from '../services/backend';
 
@@ -15,7 +15,7 @@ const ExpoLocationModule: any = (() => {
 
 const MapsRuntime: { module: any; error: string | null } = (() => {
   try {
-    return { module: require('react-native-maps'), error: null };
+    return { module: require('../components/NativeMaps'), error: null };
   } catch (error: any) {
     return { module: null, error: error?.message || String(error) };
   }
@@ -81,7 +81,7 @@ const PlaceCategoryIcon = ({
   category,
   type,
   size = 14,
-  color = '#f4f4f4',
+  color = '#f8fafc',
 }: {
   category: string;
   type: string;
@@ -96,6 +96,17 @@ const PlaceCategoryIcon = ({
   if (key === 'ADVENTURE') return <Mountain size={size} color={color} strokeWidth={2} />;
   if (type === 'EVENT') return <CalendarDays size={size} color={color} strokeWidth={2} />;
   return <MapPin size={size} color={color} strokeWidth={2} />;
+};
+
+const getCategoryFallbackImage = (category: string, type: string) => {
+  const key = (category || '').toUpperCase();
+  if (key === 'FOOD') return 'https://images.unsplash.com/photo-1544148103-0773bf10d330?auto=format&fit=crop&q=80&w=400';
+  if (key === 'CULTURE') return 'https://images.unsplash.com/photo-1599946347371-68eb71b16afc?auto=format&fit=crop&q=80&w=400';
+  if (key === 'SHOPPING') return 'https://images.unsplash.com/photo-1481437156560-3205f6a55735?auto=format&fit=crop&q=80&w=400';
+  if (key === 'NATURE') return 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=400';
+  if (key === 'ADVENTURE') return 'https://images.unsplash.com/photo-1522163182402-834f871fd851?auto=format&fit=crop&q=80&w=400';
+  if (type === 'EVENT') return 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&q=80&w=400';
+  return 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&q=80&w=400';
 };
 
 const LocationDiscoveryPanel = () => {
@@ -358,7 +369,7 @@ const LocationDiscoveryPanel = () => {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Map View</Text>
-        {Platform.OS === 'web' ? (
+        {Platform.OS === ('web' as string) ? (
           <View style={styles.mapWebWrap}>
             <IframeElement
               title="location-map"
@@ -402,11 +413,11 @@ const LocationDiscoveryPanel = () => {
                 ))
               : null}
           </MapViewComponent>
-        ) : Platform.OS !== 'web' ? (
+        ) : Platform.OS !== ('web' as string) ? (
           <View style={styles.mapFallback}>
             <Text style={styles.helper}>
               Google/Mapbox deep-link integration is active.
-              {Platform.OS === 'web'
+              {Platform.OS === ('web' as string)
                 ? ' react-native-maps does not render in Expo Web runtime.'
                 : ' If map package version is mismatched with Expo SDK, run: npx expo install react-native-maps. Expo Go: restart with npx expo start -c. Dev build: rebuild with npx expo run:android (or ios).'}
             </Text>
@@ -484,27 +495,44 @@ const PlaceList = ({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeRow}>
       {places.map((place) => (
-        <View key={place.id} style={styles.placeCard}>
-          <View style={styles.placeHeader}>
-            <View style={styles.placeTitleRow}>
-              <PlaceCategoryIcon category={place.category} type={place.type} />
-              <Text style={styles.placeName}>{place.name}</Text>
-            </View>
-            {isHotPlace(place) ? (
-              <View style={styles.hotBadge}>
-                <Flame size={10} color="#ff8a8a" />
-                <Text style={styles.hotBadgeText}>HOT</Text>
+        <View key={place.id} style={styles.placeCardModern}>
+          <ImageBackground
+            source={{ uri: getCategoryFallbackImage(place.category, place.type) }}
+            style={styles.placeCardBg}
+            imageStyle={{ borderRadius: 16 }}
+          >
+            <View style={styles.placeCardOverlay}>
+              <View style={styles.placeHeaderTop}>
+                {isHotPlace(place) ? (
+                  <View style={styles.hotBadgeModern}>
+                    <Flame size={12} color="#fff" />
+                    <Text style={styles.hotBadgeTextModern}>HOT</Text>
+                  </View>
+                ) : <View />}
+                <View style={styles.iconBadgeModern}>
+                  <PlaceCategoryIcon category={place.category} type={place.type} size={16} color="#fff" />
+                </View>
               </View>
-            ) : null}
-          </View>
-          <Text style={styles.placeMeta}>
-            {place.type} • {getPlaceLabel(place.category, place.type)} • {place.distanceKm} km
-          </Text>
-          <Text style={styles.placeMeta}>Score: {place.recommendationScore}</Text>
-          <View style={styles.placeActions}>
-            <Button label="Route" onPress={() => onRoute(place)} />
-            <Button label="Map" onPress={() => onOpenMap(place.navigationUrl)} kind="ghost" />
-          </View>
+              
+              <View style={styles.placeCardBody}>
+                <Text style={styles.placeNameModern} numberOfLines={1}>{place.name}</Text>
+                
+                <Text style={styles.placeMetaModern} numberOfLines={1}>
+                  {place.type} • {getPlaceLabel(place.category, place.type)} • {place.distanceKm} km
+                </Text>
+                <Text style={styles.placeScoreModern}>Score: {place.recommendationScore}</Text>
+                
+                <View style={styles.placeActionsModern}>
+                  <Pressable style={styles.placeBtnPrimary} onPress={() => onRoute(place)}>
+                    <Text style={styles.placeBtnPrimaryText}>Route</Text>
+                  </Pressable>
+                  <Pressable style={styles.placeBtnGhost} onPress={() => onOpenMap(place.navigationUrl)}>
+                    <Text style={styles.placeBtnGhostText}>Map</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </ImageBackground>
         </View>
       ))}
     </ScrollView>
@@ -526,7 +554,7 @@ const Field = ({
       value={value}
       onChangeText={onChangeText}
       autoCapitalize="none"
-      placeholderTextColor="#7f7f7f"
+      placeholderTextColor="#64748b"
       style={styles.input}
     />
   </View>
@@ -554,206 +582,259 @@ const Button = ({
 
 const styles = StyleSheet.create({
   wrapper: {
-    gap: 12,
+    gap: 16,
+    paddingBottom: 24,
   },
   card: {
-    backgroundColor: '#121212',
-    borderRadius: 14,
+    backgroundColor: 'rgba(17, 24, 39, 0.7)',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#2d2d2d',
-    padding: 12,
-    gap: 9,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 16,
+    gap: 12,
   },
   cardTitle: {
-    color: '#f2f2f2',
-    fontSize: 16,
-    fontWeight: '700',
-    fontFamily: 'monospace',
+    color: '#f8fafc',
+    fontSize: 18,
+    fontWeight: '800',
   },
   helper: {
-    color: '#a7a7a7',
-    fontSize: 12,
+    color: '#94a3b8',
+    fontSize: 13,
     lineHeight: 18,
   },
   coordText: {
-    color: '#d6d6d6',
-    fontSize: 12,
-    fontFamily: 'monospace',
+    color: '#cbd5e1',
+    fontSize: 13,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 4,
   },
   row: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   fieldWrap: {
     flex: 1,
-    gap: 4,
+    gap: 6,
   },
   label: {
-    color: '#adadad',
-    fontSize: 11,
-    fontFamily: 'monospace',
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
   },
   input: {
-    borderRadius: 9,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#363636',
-    backgroundColor: '#191919',
-    color: '#f0f0f0',
-    fontSize: 13,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    color: '#f8fafc',
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   buttonRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   buttonStack: {
-    gap: 8,
+    gap: 10,
   },
   button: {
-    borderRadius: 10,
-    backgroundColor: '#f1f1f1',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: '#00f2fe',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonGhost: {
-    backgroundColor: '#1c1c1c',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderWidth: 1,
-    borderColor: '#3a3a3a',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   buttonDisabled: {
-    opacity: 0.45,
+    opacity: 0.5,
   },
   buttonText: {
-    color: '#090909',
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: 'monospace',
+    color: '#0f172a',
+    fontSize: 13,
+    fontWeight: '800',
   },
   buttonGhostText: {
-    color: '#d9d9d9',
+    color: '#e2e8f0',
   },
   map: {
     width: '100%',
-    height: 220,
-    borderRadius: 12,
+    height: 240,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   mapFallback: {
     borderWidth: 1,
-    borderColor: '#313131',
-    backgroundColor: '#171717',
-    borderRadius: 12,
-    padding: 10,
-    gap: 8,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
   },
   mapWebWrap: {
     borderWidth: 1,
-    borderColor: '#313131',
-    borderRadius: 12,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#141414',
-    gap: 8,
-    paddingBottom: 8,
+    backgroundColor: '#000',
+    gap: 10,
+    paddingBottom: 10,
   },
   webIframe: {
     width: '100%',
-    height: 220,
+    height: 240,
     borderWidth: 0,
   },
   mapLegendRow: {
-    marginTop: 2,
+    marginTop: 4,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   mapLegendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderRadius: 999,
+    gap: 6,
+    borderRadius: 100,
     borderWidth: 1,
-    borderColor: '#2f2f2f',
-    backgroundColor: '#171717',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   mapLegendText: {
-    color: '#b4b4b4',
-    fontSize: 11,
-    fontFamily: 'monospace',
+    color: '#cbd5e1',
+    fontSize: 12,
+    fontWeight: '600',
   },
   sectionLabel: {
-    color: '#f1f1f1',
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-    marginTop: 2,
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 6,
+    marginBottom: 4,
   },
   empty: {
-    color: '#8d8d8d',
-    fontSize: 12,
+    color: '#64748b',
+    fontSize: 13,
     fontStyle: 'italic',
   },
   placeRow: {
-    gap: 8,
-    paddingRight: 6,
+    gap: 12,
+    paddingRight: 10,
   },
-  placeCard: {
-    width: 220,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#323232',
-    backgroundColor: '#171717',
-    padding: 9,
-    gap: 6,
+  placeCardModern: {
+    width: 240,
+    height: 160,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  placeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  placeCardBg: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
+  placeCardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 16,
+    padding: 12,
     justifyContent: 'space-between',
-    gap: 8,
   },
-  placeTitleRow: {
+  placeHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  hotBadgeModern: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    flex: 1,
+    gap: 4,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 100,
   },
-  placeName: {
-    color: '#f4f4f4',
-    fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
-  },
-  hotBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    borderWidth: 1,
-    borderColor: '#7a2f2f',
-    backgroundColor: '#3b1717',
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  hotBadgeText: {
-    color: '#ffd6d6',
+  hotBadgeTextModern: {
+    color: '#fff',
     fontSize: 10,
-    fontWeight: '700',
-    fontFamily: 'monospace',
+    fontWeight: '800',
   },
-  placeMeta: {
-    color: '#a8a8a8',
+  iconBadgeModern: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeCardBody: {
+    gap: 4,
+  },
+  placeNameModern: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  placeMetaModern: {
+    color: '#e2e8f0',
     fontSize: 11,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
-  placeActions: {
+  placeScoreModern: {
+    color: '#38bdf8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  placeActionsModern: {
     flexDirection: 'row',
-    gap: 6,
-    marginTop: 2,
+    gap: 8,
+    marginTop: 4,
+  },
+  placeBtnPrimary: {
+    flex: 1,
+    backgroundColor: 'rgba(0,242,254,0.9)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  placeBtnPrimaryText: {
+    color: '#0f172a',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  placeBtnGhost: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 8,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  placeBtnGhostText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
 

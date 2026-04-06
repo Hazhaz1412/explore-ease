@@ -11,8 +11,10 @@ import {
   Text,
   TextInput,
   View,
+  ImageBackground,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { Calendar, Clock, MapPin, Plus, Share2, StickyNote, Trash2 } from 'lucide-react-native';
 import {
   apiBaseUrl,
   CreateTravelPlanItemInput,
@@ -471,22 +473,34 @@ const TravelPlanningPanel: React.FC = () => {
           <Text style={styles.empty}>Create a plan to start building itinerary.</Text>
         ) : (
           <>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{activePlan.title}</Text>
-                <Text style={styles.meta}>
-                  {activePlan.startDate || 'No start date'} -> {activePlan.endDate || 'No end date'}
-                </Text>
+            <ImageBackground 
+              source={{ uri: 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&q=80&w=800' }}
+              style={styles.planBannerBg}
+              imageStyle={{ borderRadius: 14 }}
+            >
+              <View style={styles.planBannerOverlay}>
+                <View style={styles.headerRow}>
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={styles.bannerTitle}>{activePlan.title}</Text>
+                    <View style={styles.bannerMetaRow}>
+                      <Calendar size={12} color="#e2e8f0" />
+                      <Text style={styles.bannerMetaText}>
+                        {activePlan.startDate || 'No start date'} {'->'} {activePlan.endDate || 'No end date'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.row}>
+                    <Pressable style={styles.ghostBtnLight} onPress={onSharePlan}>
+                      <Share2 size={16} color="#fff" />
+                    </Pressable>
+                    <Pressable style={styles.primaryBtnModern} onPress={openAddItemModal}>
+                      <Plus size={16} color="#0f172a" />
+                      <Text style={styles.primaryBtnTextModern}>Item</Text>
+                    </Pressable>
+                  </View>
+                </View>
               </View>
-              <View style={styles.row}>
-                <Pressable style={styles.ghostBtn} onPress={onSharePlan}>
-                  <Text style={styles.ghostBtnText}>Share</Text>
-                </Pressable>
-                <Pressable style={styles.ghostBtn} onPress={openAddItemModal}>
-                  <Text style={styles.ghostBtnText}>+ Item</Text>
-                </Pressable>
-              </View>
-            </View>
+            </ImageBackground>
 
             {!!latestShareLink && (
               <View style={styles.shareCard}>
@@ -550,19 +564,47 @@ const TravelPlanningPanel: React.FC = () => {
             <Text style={styles.sectionTitle}>Day {activeDay} Itinerary</Text>
             {!activeDayItems.length && <Text style={styles.empty}>No items for this day.</Text>}
             {activeDayItems.map((item) => (
-              <Animated.View key={`item-${item.id}`} entering={FadeInDown.duration(180)} style={styles.itemCard}>
-                <View style={styles.itemTop}>
-                  <Text style={styles.itemTitle}>{item.title || item.locationName || `Item ${item.id}`}</Text>
-                  <Text style={styles.itemType}>{item.itemType}</Text>
-                </View>
-                {!!item.locationName && <Text style={styles.meta}>Location: {item.locationName}</Text>}
-                {!!item.startTime && <Text style={styles.meta}>Time: {formatDate(item.startTime)}</Text>}
-                {!!item.reminderAt && <Text style={styles.reminder}>Reminder: {formatDate(item.reminderAt)}</Text>}
-                {!!item.note && <Text style={styles.note}>Note: {item.note}</Text>}
-                <View style={styles.itemActions}>
-                  <Pressable onPress={() => void onDeleteItem(item.id)} style={styles.deleteBtn}>
-                    <Text style={styles.deleteBtnText}>Remove</Text>
-                  </Pressable>
+              <Animated.View key={`item-${item.id}`} entering={FadeInDown.duration(180)} style={styles.itemCardModern}>
+                <View style={styles.itemCardLeftAccent} />
+                <View style={styles.itemCardContent}>
+                  <View style={styles.itemTop}>
+                    <Text style={styles.itemTitle}>{item.title || item.locationName || `Item ${item.id}`}</Text>
+                    <View style={styles.itemTypeBadge}>
+                      <Text style={styles.itemTypeText}>{item.itemType}</Text>
+                    </View>
+                  </View>
+                  
+                  {!!item.locationName && (
+                    <View style={styles.metaIconRow}>
+                      <MapPin size={12} color="#9ca3af" />
+                      <Text style={styles.metaText}>{item.locationName}</Text>
+                    </View>
+                  )}
+                  {!!item.startTime && (
+                    <View style={styles.metaIconRow}>
+                      <Clock size={12} color="#9ca3af" />
+                      <Text style={styles.metaText}>{formatDate(item.startTime)}</Text>
+                    </View>
+                  )}
+                  {!!item.reminderAt && (
+                    <View style={styles.metaIconRow}>
+                      <Calendar size={12} color="#fde047" />
+                      <Text style={styles.reminderText}>Reminder: {formatDate(item.reminderAt)}</Text>
+                    </View>
+                  )}
+                  {!!item.note && (
+                    <View style={styles.metaIconRow}>
+                      <StickyNote size={12} color="#93c5fd" />
+                      <Text style={styles.noteText}>{item.note}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.itemActions}>
+                    <Pressable onPress={() => void onDeleteItem(item.id)} style={styles.deleteBtnModern}>
+                      <Trash2 size={12} color="#ef4444" />
+                      <Text style={styles.deleteBtnTextModern}>Remove</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </Animated.View>
             ))}
@@ -804,53 +846,116 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   primaryBtn: {
-    borderRadius: 9,
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#00f2fe',
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   primaryBtnText: {
     color: '#0f172a',
     fontSize: 12,
     fontWeight: '800',
-    fontFamily: 'monospace',
   },
   ghostBtn: {
-    borderRadius: 9,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#1f2937',
-    paddingHorizontal: 10,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   ghostBtnText: {
-    color: '#f8fafc',
+    color: '#e2e8f0',
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: 'monospace',
   },
+  
+  /* Banners and Modern buttons */
+  planBannerBg: {
+    width: '100%',
+    height: 110,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  planBannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 14,
+    padding: 12,
+    justifyContent: 'flex-end',
+  },
+  bannerTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  bannerMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bannerMetaText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  ghostBtnLight: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 100,
+    backgroundColor: '#00f2fe',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  primaryBtnTextModern: {
+    color: '#0f172a',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
   shareCard: {
     borderWidth: 1,
-    borderColor: '#27507d',
-    backgroundColor: '#0d2034',
+    borderColor: 'rgba(56,189,248,0.3)',
+    backgroundColor: 'rgba(15,23,42,0.8)',
     borderRadius: 10,
     padding: 10,
     gap: 6,
   },
   shareTitle: {
-    color: '#e2ecff',
+    color: '#e0f2fe',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   shareLink: {
-    color: '#9fc6ff',
+    color: '#7dd3fc',
     fontSize: 12,
   },
   shareOpenBtn: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: '#3b82f6',
-    backgroundColor: '#1d4ed8',
+    borderColor: '#0284c7',
+    backgroundColor: '#0369a1',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -858,30 +963,31 @@ const styles = StyleSheet.create({
   shareOpenBtnText: {
     color: '#fff',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   dayRow: {
     gap: 8,
+    marginBottom: 4,
   },
   dayChip: {
     borderWidth: 1,
-    borderColor: '#2d3f57',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: '#0f1c31',
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 100,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   dayChipActive: {
-    borderColor: '#f8fafc',
-    backgroundColor: '#f8fafc',
+    borderColor: '#00f2fe',
+    backgroundColor: 'rgba(0,242,254,0.15)',
   },
   dayChipText: {
-    color: '#c8daf7',
+    color: '#94a3b8',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   dayChipTextActive: {
-    color: '#0f172a',
+    color: '#00f2fe',
   },
   routeRow: {
     gap: 8,
@@ -891,44 +997,60 @@ const styles = StyleSheet.create({
   },
   modeChip: {
     borderWidth: 1,
-    borderColor: '#2f425d',
-    borderRadius: 999,
-    paddingHorizontal: 10,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 100,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#0f1c31',
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   modeChipActive: {
-    borderColor: '#f8fafc',
-    backgroundColor: '#f8fafc',
+    borderColor: '#e2e8f0',
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   modeChipText: {
-    color: '#c7daf7',
+    color: '#94a3b8',
     fontSize: 12,
     fontWeight: '700',
   },
   modeChipTextActive: {
-    color: '#0f172a',
+    color: '#f8fafc',
   },
   optimizedCard: {
     borderWidth: 1,
-    borderColor: '#1f5348',
-    borderRadius: 10,
-    backgroundColor: '#0f2d27',
-    padding: 10,
-    gap: 4,
+    borderColor: 'rgba(16,185,129,0.3)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(6,78,59,0.3)',
+    padding: 12,
+    gap: 6,
   },
   optimizedTitle: {
-    color: '#d6f4ee',
-    fontSize: 13,
-    fontWeight: '700',
+    color: '#34d399',
+    fontSize: 14,
+    fontWeight: '800',
   },
-  itemCard: {
+  
+  /* Item Card Modern */
+  itemCardModern: {
+    flexDirection: 'row',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2d3f57',
-    borderRadius: 10,
-    backgroundColor: '#101b2d',
-    padding: 10,
-    gap: 4,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(31,41,55,0.6)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  itemCardLeftAccent: {
+    width: 6,
+    backgroundColor: '#00f2fe',
+  },
+  itemCardContent: {
+    flex: 1,
+    padding: 12,
+    gap: 6,
   },
   itemTop: {
     flexDirection: 'row',
@@ -939,62 +1061,79 @@ const styles = StyleSheet.create({
   itemTitle: {
     flex: 1,
     color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
   },
-  itemType: {
-    backgroundColor: '#dbeafe',
-    color: '#1e3a8a',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
+  itemTypeBadge: {
+    backgroundColor: 'rgba(56,189,248,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+  },
+  itemTypeText: {
+    color: '#38bdf8',
     fontSize: 10,
-    fontWeight: '700',
-    overflow: 'hidden',
+    fontWeight: '800',
   },
-  reminder: {
-    color: '#fde047',
+  metaIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metaText: {
+    color: '#cbd5e1',
     fontSize: 12,
   },
-  note: {
-    color: '#d6e4ff',
+  reminderText: {
+    color: '#fef08a',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  noteText: {
+    color: '#bfdbfe',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
   itemActions: {
     marginTop: 4,
+    flexDirection: 'row',
   },
-  deleteBtn: {
-    alignSelf: 'flex-start',
+  deleteBtnModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     borderWidth: 1,
-    borderColor: '#7f1d1d',
-    backgroundColor: '#991b1b',
+    borderColor: 'rgba(239,68,68,0.3)',
+    backgroundColor: 'rgba(239,68,68,0.1)',
     borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  deleteBtnText: {
-    color: '#fff',
+  deleteBtnTextModern: {
+    color: '#ef4444',
     fontSize: 11,
     fontWeight: '700',
   },
   deletePlanBtn: {
-    marginTop: 6,
+    marginTop: 8,
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: '#7f1d1d',
+    borderColor: 'rgba(239,68,68,0.4)',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    backgroundColor: '#7f1d1d',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(239,68,68,0.2)',
   },
   deletePlanBtnText: {
-    color: '#fff',
-    fontWeight: '700',
+    color: '#fca5a5',
+    fontWeight: '800',
     fontSize: 12,
   },
   empty: {
-    color: '#90a5c2',
-    fontSize: 12,
+    color: '#94a3b8',
+    fontSize: 13,
     fontStyle: 'italic',
   },
   modalBackdrop: {

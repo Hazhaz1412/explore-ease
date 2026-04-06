@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   View,
+  ImageBackground,
 } from 'react-native';
 import {
   Bookmark,
@@ -51,7 +52,7 @@ import {
 /* ────────────── Native Map lazy load ────────────── */
 const MapsModule: any = (() => {
   try {
-    return require('react-native-maps');
+    return require('../components/NativeMaps');
   } catch {
     return null;
   }
@@ -945,7 +946,6 @@ const FeaturedSection = ({
   );
 };
 
-/* ── Featured horizontal card ── */
 const FeaturedCard = ({
   item,
   color,
@@ -958,40 +958,46 @@ const FeaturedCard = ({
   onBookmark: (item: DiscoveryItem) => void;
 }) => {
   const meta = getCategoryMeta(item.category);
+  const fallbackImg = 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&q=80&w=400';
   return (
     <Pressable style={styles.featuredCard} onPress={() => onDetail(item)}>
-      {item.thumbnailUrl ? (
-        <Image source={{ uri: item.thumbnailUrl }} style={styles.featuredImg} resizeMode="cover" />
-      ) : (
-        <View style={[styles.featuredImgFallback, { backgroundColor: color + '18' }]}>
-          <Text style={{ fontSize: 28 }}>{meta.emoji}</Text>
+      <ImageBackground 
+        source={{ uri: item.thumbnailUrl || fallbackImg }} 
+        style={styles.featuredImgBg} 
+        imageStyle={{ borderRadius: 16 }}
+      >
+        <View style={styles.featuredOverlay}>
+          <View style={styles.featuredTopRow}>
+            <View style={[styles.featuredIconBadge, { backgroundColor: color + '33' }]}>
+              <Text style={{ fontSize: 14 }}>{meta.emoji}</Text>
+            </View>
+            <Pressable style={styles.featuredBookmarkBg} onPress={() => onBookmark(item)}>
+              {item.bookmarked ? (
+                <BookmarkCheck size={16} color="#FFB347" strokeWidth={2.5} />
+              ) : (
+                <Bookmark size={16} color="#fff" strokeWidth={2} />
+              )}
+            </Pressable>
+          </View>
+          <View style={styles.featuredCardBodyBg}>
+            <Text style={styles.featuredCardNameBg} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <View style={styles.featuredCardMetaBg}>
+              <Star size={12} color="#FFB347" fill="#FFB347" strokeWidth={0} />
+              <Text style={styles.featuredCardMetaTextBg}>{item.rating.toFixed(1)}</Text>
+              <Text style={styles.featuredCardMetaTextBg}>• {item.distanceKm} km</Text>
+            </View>
+            <Text style={styles.featuredCardDescBg} numberOfLines={1}>
+              {item.shortDescription}
+            </Text>
+          </View>
         </View>
-      )}
-      <View style={styles.featuredCardBody}>
-        <Text style={styles.featuredCardName} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <View style={styles.featuredCardMeta}>
-          <Star size={10} color="#FFB347" fill="#FFB347" strokeWidth={0} />
-          <Text style={styles.featuredCardMetaText}>{item.rating.toFixed(1)}</Text>
-          <Text style={styles.featuredCardMetaText}>• {item.distanceKm} km</Text>
-        </View>
-        <Text style={styles.featuredCardDesc} numberOfLines={1}>
-          {item.shortDescription}
-        </Text>
-      </View>
-      <Pressable style={styles.featuredBookmark} onPress={() => onBookmark(item)}>
-        {item.bookmarked ? (
-          <BookmarkCheck size={12} color="#FFB347" strokeWidth={2} />
-        ) : (
-          <Bookmark size={12} color="#888" strokeWidth={2} />
-        )}
-      </Pressable>
+      </ImageBackground>
     </Pressable>
   );
 };
 
-/* ── Item card (grid/list) ── */
 const ItemCard = ({
   item,
   onDetail,
@@ -1006,72 +1012,71 @@ const ItemCard = ({
   loadingDetail: boolean;
 }) => {
   const meta = getCategoryMeta(item.category);
+  const fallbackImg = 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&q=80&w=600';
   return (
-    <View style={styles.itemCard}>
-      {/* thumbnail */}
-      {item.thumbnailUrl ? (
-        <Image source={{ uri: item.thumbnailUrl }} style={styles.thumbnail} resizeMode="cover" />
-      ) : (
-        <View style={[styles.thumbnailFallback, { backgroundColor: meta.color + '12' }]}>
-          <Text style={{ fontSize: 30 }}>{meta.emoji}</Text>
-          <Text style={styles.thumbnailFallbackLabel}>{meta.label}</Text>
-        </View>
-      )}
-      {/* badge */}
-      <View style={[styles.itemBadge, { backgroundColor: meta.color + '22' }]}>
-        <Text style={[styles.itemBadgeText, { color: meta.color }]}>{meta.label}</Text>
-      </View>
-
-      <View style={styles.itemContent}>
-        <View style={styles.itemTop}>
-          <Text style={styles.itemName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Pressable style={styles.bookmarkBtn} onPress={() => void onBookmark(item)}>
+    <View style={styles.itemCardModern}>
+      <ImageBackground 
+        source={{ uri: item.thumbnailUrl || fallbackImg }} 
+        style={styles.itemImageBg}
+        imageStyle={{ borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
+      >
+        <View style={styles.itemImageOverlay} />
+        <View style={styles.itemImageTopRow}>
+          <View style={[styles.itemBadgeModern, { backgroundColor: meta.color + 'E6' }]}>
+            <Text style={styles.itemBadgeTextModern}>{meta.emoji} {meta.label}</Text>
+          </View>
+          <Pressable style={styles.bookmarkBtnModern} onPress={() => void onBookmark(item)}>
             {item.bookmarked ? (
-              <BookmarkCheck size={14} color="#FFB347" strokeWidth={2} />
+              <BookmarkCheck size={18} color="#FFB347" strokeWidth={2.5} />
             ) : (
-              <Bookmark size={14} color="#888" strokeWidth={2} />
+              <Bookmark size={18} color="#fff" strokeWidth={2} />
             )}
           </Pressable>
         </View>
+      </ImageBackground>
+
+      <View style={styles.itemContentModern}>
+        <View style={styles.itemTop}>
+          <Text style={styles.itemNameModern} numberOfLines={1}>
+            {item.name}
+          </Text>
+        </View>
 
         {/* rating row */}
-        <View style={styles.itemRatingRow}>
-          <Star size={11} color="#FFB347" fill="#FFB347" strokeWidth={0} />
-          <Text style={styles.itemRatingText}>{item.rating.toFixed(1)}</Text>
-          <Text style={styles.itemMetaLight}>({item.reviewCount})</Text>
-          <Text style={styles.itemMetaSep}>•</Text>
-          <Text style={styles.itemMetaLight}>{item.distanceKm} km</Text>
-          <Text style={styles.itemMetaSep}>•</Text>
-          <Text style={styles.itemMetaLight}>{item.pricingText || '$'}</Text>
+        <View style={styles.itemRatingRowModern}>
+          <Star size={14} color="#FFB347" fill="#FFB347" strokeWidth={0} />
+          <Text style={styles.itemRatingTextModern}>{item.rating.toFixed(1)}</Text>
+          <Text style={styles.itemMetaLightModern}>({item.reviewCount})</Text>
+          <Text style={styles.itemMetaSepModern}>•</Text>
+          <Text style={styles.itemMetaLightModern}>{item.distanceKm} km</Text>
+          <Text style={styles.itemMetaSepModern}>•</Text>
+          <Text style={styles.itemMetaLightModern}>{item.pricingText || '$'}</Text>
         </View>
 
-        {/* availability */}
-        <View style={styles.availRow}>
-          <View
-            style={[
-              styles.availDot,
-              item.openNow === true && styles.availDotOpen,
-              item.openNow === false && styles.availDotClosed,
-            ]}
-          />
-          <Text style={styles.availText}>{item.availabilityLabel}</Text>
-          <Text style={styles.itemMetaLight}> • Pop {item.popularityScore}</Text>
-        </View>
-
-        <Text style={styles.itemDesc} numberOfLines={2}>
+        <Text style={styles.itemDescModern} numberOfLines={2}>
           {item.shortDescription}
         </Text>
 
-        <View style={styles.itemActions}>
-          <Pressable style={styles.ghostBtn} onPress={() => void onDetail(item)}>
-            <Text style={styles.ghostBtnText}>{loadingDetail ? '…' : 'Details'}</Text>
-          </Pressable>
-          <Pressable style={styles.primaryBtn} onPress={() => void onDirections(item.directionsUrl)}>
-            <MapPin size={11} color="#090909" strokeWidth={2} />
-            <Text style={styles.primaryBtnText}>Directions</Text>
-          </Pressable>
+        <View style={styles.availActionsRow}>
+          <View style={styles.availBadge}>
+            <View
+              style={[
+                styles.availDotModern,
+                item.openNow === true && styles.availDotOpenModern,
+                item.openNow === false && styles.availDotClosedModern,
+              ]}
+            />
+            <Text style={styles.availTextModern}>{item.availabilityLabel}</Text>
+          </View>
+          <View style={styles.itemActionsModern}>
+            <Pressable style={styles.ghostBtnModern} onPress={() => void onDetail(item)}>
+              <Text style={styles.ghostBtnTextModern}>{loadingDetail ? '…' : 'Details'}</Text>
+            </Pressable>
+            <Pressable style={styles.primaryBtnModern} onPress={() => void onDirections(item.directionsUrl)}>
+              <MapPin size={12} color="#000" strokeWidth={2.5} />
+              <Text style={styles.primaryBtnTextModern}>Guide</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </View>
@@ -1291,142 +1296,172 @@ const styles = StyleSheet.create({
   applyBtnText: { color: '#090909', fontSize: 12, fontWeight: '700', fontFamily: 'monospace' },
 
   /* ── featured section ── */
-  featuredSection: { gap: 8 },
+  featuredSection: { gap: 12 },
   featuredHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
   },
-  featuredTitle: { color: '#f2f2f2', fontSize: 16, fontWeight: '700' },
-  featuredSubtitle: { color: '#888', fontSize: 11, marginTop: 1 },
+  featuredTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '800' },
+  featuredSubtitle: { color: '#94a3b8', fontSize: 13, marginTop: 2 },
   seeAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    borderRadius: 999,
+    gap: 4,
+    borderRadius: 100,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.03)',
   },
-  seeAllText: { fontSize: 11, fontWeight: '600' },
-  featuredScroll: { gap: 10, paddingRight: 4 },
+  seeAllText: { fontSize: 12, fontWeight: '700' },
+  featuredScroll: { gap: 14, paddingRight: 10 },
   featuredCard: {
-    width: 200,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    backgroundColor: '#151515',
-    overflow: 'hidden',
+    width: 220,
+    height: 140,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  featuredImg: { width: '100%', height: 110 },
-  featuredImgFallback: {
+  featuredImgBg: {
     width: '100%',
-    height: 110,
+    height: '100%',
+    justifyContent: 'flex-end',
+  },
+  featuredOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 16,
+    justifyContent: 'space-between',
+  },
+  featuredTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  featuredIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  featuredCardBody: { padding: 8, gap: 3 },
-  featuredCardName: { color: '#f3f3f3', fontSize: 13, fontWeight: '700' },
-  featuredCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  featuredCardMetaText: { color: '#aaa', fontSize: 10 },
-  featuredCardDesc: { color: '#888', fontSize: 10, marginTop: 1 },
-  featuredBookmark: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  featuredBookmarkBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  /* ── list card ── */
-  listCard: {
-    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#2d2d2d',
-    backgroundColor: '#121212',
-    padding: 11,
-    gap: 8,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  featuredCardBodyBg: { padding: 12, gap: 4 },
+  featuredCardNameBg: { color: '#fff', fontSize: 15, fontWeight: '800', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  featuredCardMetaBg: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  featuredCardMetaTextBg: { color: '#e2e8f0', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  featuredCardDescBg: { color: '#cbd5e1', fontSize: 11, marginTop: 2, textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+
+  /* ── list card (wrap) ── */
+  listCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    backgroundColor: '#111827',
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
   },
   listHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: '#f2f2f2', fontSize: 15, fontWeight: '700', fontFamily: 'monospace' },
-  listWrap: { gap: 10 },
+  cardTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '800' },
+  listWrap: { gap: 14 },
 
-  /* ── item card ── */
-  itemCard: {
-    borderRadius: 14,
+  /* ── item card modern ── */
+  itemCardModern: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2a2a2a',
-    backgroundColor: '#161616',
-    overflow: 'hidden',
+    borderColor: '#374151',
+    backgroundColor: '#1f2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  thumbnail: { width: '100%', height: 140 },
-  thumbnailFallback: {
-    width: '100%',
-    height: 140,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+  itemImageBg: { width: '100%', height: 160 },
+  itemImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
-  thumbnailFallbackLabel: { color: '#aaa', fontSize: 12, fontFamily: 'monospace' },
-  itemBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  itemImageTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 12,
   },
-  itemBadgeText: { fontSize: 10, fontWeight: '700', fontFamily: 'monospace' },
-  itemContent: { padding: 10, gap: 5 },
-  itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  itemName: { flex: 1, color: '#f4f4f4', fontSize: 14, fontWeight: '700' },
-  bookmarkBtn: {
-    width: 30,
-    height: 30,
+  itemBadgeModern: {
     borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderWidth: 1,
-    borderColor: '#333',
-    backgroundColor: '#1a1a1a',
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  itemBadgeTextModern: { fontSize: 11, fontWeight: '800', color: '#fff', textShadowColor: 'rgba(0,0,0,0.3)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
+  bookmarkBtnModern: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  itemRatingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  itemRatingText: { color: '#FFB347', fontSize: 12, fontWeight: '700' },
-  itemMetaLight: { color: '#999', fontSize: 11 },
-  itemMetaSep: { color: '#555', fontSize: 11 },
-  availRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  availDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#555' },
-  availDotOpen: { backgroundColor: '#4ECDC4' },
-  availDotClosed: { backgroundColor: '#FF6B6B' },
-  availText: { color: '#bbb', fontSize: 11 },
-  itemDesc: { color: '#d0d0d0', fontSize: 12, lineHeight: 17 },
-  itemActions: { flexDirection: 'row', gap: 7, marginTop: 3 },
+  itemContentModern: { padding: 14, gap: 8 },
+  itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  itemNameModern: { flex: 1, color: '#f8fafc', fontSize: 16, fontWeight: '800' },
+  itemRatingRowModern: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  itemRatingTextModern: { color: '#FFB347', fontSize: 13, fontWeight: '800' },
+  itemMetaLightModern: { color: '#9ca3af', fontSize: 12 },
+  itemMetaSepModern: { color: '#6b7280', fontSize: 12 },
+  availActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  availBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  availDotModern: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6b7280' },
+  availDotOpenModern: { backgroundColor: '#10b981' },
+  availDotClosedModern: { backgroundColor: '#ef4444' },
+  availTextModern: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' },
+  itemDescModern: { color: '#94a3b8', fontSize: 13, lineHeight: 18 },
+  itemActionsModern: { flexDirection: 'row', gap: 8 },
 
-  /* ── buttons ── */
-  primaryBtn: {
+  /* ── buttons modern ── */
+  primaryBtnModern: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 10,
-    backgroundColor: '#f4f4f4',
-    paddingHorizontal: 12,
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: '#00f2fe',
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  primaryBtnText: { color: '#090909', fontSize: 11, fontWeight: '700', fontFamily: 'monospace' },
-  ghostBtn: {
-    borderRadius: 10,
+  primaryBtnTextModern: { color: '#0f172a', fontSize: 12, fontWeight: '800' },
+  ghostBtnModern: {
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
-    backgroundColor: '#1a1a1a',
-    paddingHorizontal: 12,
+    borderColor: '#374151',
+    backgroundColor: '#111827',
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  ghostBtnText: { color: '#d5d5d5', fontSize: 11, fontWeight: '700', fontFamily: 'monospace' },
+  ghostBtnTextModern: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
   primaryBtnLg: {
     flex: 1,
     flexDirection: 'row',

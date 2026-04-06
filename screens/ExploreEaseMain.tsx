@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Dimensions,
+  ImageBackground,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -11,6 +12,11 @@ import {
   View,
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { 
+  Search, Compass, CalendarCheck, MapPin, 
+  MessageCircle, Bell, Star, CloudOff, 
+  UserCircle, ShieldCheck, Settings, Download 
+} from 'lucide-react-native';
 import LocationDiscoveryPanel from './LocationDiscoveryPanel';
 import DiscoveryModulePanel from './DiscoveryModulePanel';
 import ProfilePreferencesPrivacyPanel from './ProfilePreferencesPrivacyPanel';
@@ -19,9 +25,13 @@ import CommunityReviewsPanel from './CommunityReviewsPanel';
 import NotificationsPanel from './NotificationsPanel';
 import AdminDashboardPanel from './AdminDashboardPanel';
 import TravelPlanningPanel from './TravelPlanningPanel';
+import SocialPanel from './SocialPanel';
+import SmartSearchPanel from './SmartSearchPanel';
+import DirectMessagingPanel from './DirectMessagingPanel';
+import MessagingPanel from './MessagingPanel';
 import { sessionStore } from '../services/backend';
 
-type TabKey = 'discover' | 'events' | 'travel' | 'notifications' | 'community' | 'offline' | 'profile' | 'admin';
+type TabKey = 'discover' | 'events' | 'travel' | 'notifications' | 'community' | 'social' | 'messages' | 'offline' | 'profile' | 'admin';
 
 type Props = {
   onLoggedOut: () => void;
@@ -29,6 +39,7 @@ type Props = {
 
 const { width } = Dimensions.get('window');
 const IS_WIDE = width >= 900;
+const HEADER_BG = 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&q=80&w=1000';
 
 const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const [activeTab, setActiveTab] = useState<TabKey>('discover');
@@ -36,16 +47,18 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const [offlineMode, setOfflineMode] = useState(false);
   const currentUser = sessionStore.get()?.user;
   const isAdmin = !!(currentUser?.isSuperuser || currentUser?.isStaff);
-  const tabs = useMemo<{ key: TabKey; label: string }[]>(
+  const tabs = useMemo<{ key: TabKey; label: string; icon: any }[]>(
     () => [
-      { key: 'discover', label: 'Discover' },
-      { key: 'events', label: 'Events' },
-      { key: 'travel', label: 'Travel Plan' },
-      { key: 'notifications', label: 'Notifications' },
-      { key: 'community', label: 'Reviews' },
-      { key: 'offline', label: 'Offline' },
-      ...(isAdmin ? [{ key: 'admin' as TabKey, label: 'Admin' }] : []),
-      { key: 'profile', label: 'Profile' },
+      { key: 'discover', label: 'Explore', icon: Compass },
+      { key: 'events', label: 'Events', icon: CalendarCheck },
+      { key: 'travel', label: 'Plan', icon: MapPin },
+      { key: 'social', label: 'Social', icon: Star },
+      { key: 'messages', label: 'Chats', icon: MessageCircle },
+      { key: 'notifications', label: 'Alerts', icon: Bell },
+      { key: 'community', label: 'Reviews', icon: Star },
+      { key: 'offline', label: 'Offline', icon: CloudOff },
+      ...(isAdmin ? [{ key: 'admin' as TabKey, label: 'Admin', icon: ShieldCheck }] : []),
+      { key: 'profile', label: 'Profile', icon: UserCircle },
     ],
     [isAdmin]
   );
@@ -62,14 +75,20 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderDiscover = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Content Browsing</Text>
-        <Text style={styles.sectionMeta}>Explore attractions, cuisines & activities — auto-categorized</Text>
+        <Text style={styles.sectionTitle}>Featured Destinations</Text>
+        <Text style={styles.sectionMeta}>Handpicked sights & activities for you</Text>
       </View>
       <DiscoveryModulePanel />
 
-      <View style={[styles.sectionHeader, { marginTop: 18 }]}>
-        <Text style={styles.sectionTitle}>Location-Based Discovery</Text>
-        <Text style={styles.sectionMeta}>GPS, Map, Nearby POI/Events, Distance & Route</Text>
+      <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+        <Text style={styles.sectionTitle}>Smart Discovery</Text>
+        <Text style={styles.sectionMeta}>AI matches based on your mood</Text>
+      </View>
+      <SmartSearchPanel />
+
+      <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+        <Text style={styles.sectionTitle}>Nearby Hotspots</Text>
+        <Text style={styles.sectionMeta}>Hidden gems just around the corner</Text>
       </View>
       <LocationDiscoveryPanel />
     </Animated.View>
@@ -78,8 +97,8 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderEvents = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Event Management</Text>
-        <Text style={styles.sectionMeta}>Discover, filter & manage travel events</Text>
+        <Text style={styles.sectionTitle}>Local Events</Text>
+        <Text style={styles.sectionMeta}>Join what's happening around you</Text>
       </View>
       <EventManagementPanel />
     </Animated.View>
@@ -88,16 +107,14 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderCommunity = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Community Reviews</Text>
-        <Text style={styles.sectionMeta}>Verified traveler feedback</Text>
+        <Text style={styles.sectionTitle}>Traveler Feedback</Text>
+        <Text style={styles.sectionMeta}>Authentic stories & ratings</Text>
       </View>
       <CommunityReviewsPanel />
-      <View style={styles.systemCard}>
-        <View style={styles.systemIcon}>
-          <Text style={styles.systemIconText}>ENC</Text>
-        </View>
-        <Text style={styles.systemCardText}>
-          Secure communication is enabled for event messages and host coordination.
+      <View style={styles.infoCard}>
+        <ShieldCheck size={20} color="#00f2fe" />
+        <Text style={styles.infoCardText}>
+          All reviews are verified by our community moderation filters.
         </Text>
       </View>
     </Animated.View>
@@ -106,8 +123,8 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderNotifications = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Notification Center</Text>
-        <Text style={styles.sectionMeta}>Offers, alerts, messages, and push registration</Text>
+        <Text style={styles.sectionTitle}>Alert Center</Text>
+        <Text style={styles.sectionMeta}>Flight changes, invites & updates</Text>
       </View>
       <NotificationsPanel />
     </Animated.View>
@@ -116,8 +133,8 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderTravelPlanning = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Travel Planning</Text>
-        <Text style={styles.sectionMeta}>Day-wise itinerary, sharing, notes, reminders, route optimization</Text>
+        <Text style={styles.sectionTitle}>Your Itineraries</Text>
+        <Text style={styles.sectionMeta}>Organize your daily routes effortlessly</Text>
       </View>
       <TravelPlanningPanel />
     </Animated.View>
@@ -128,8 +145,13 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Offline Hub</Text>
         <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Offline Mode</Text>
-          <Switch value={offlineMode} onValueChange={setOfflineMode} />
+          <Text style={styles.switchLabel}>Work Offline</Text>
+          <Switch 
+            value={offlineMode} 
+            onValueChange={setOfflineMode} 
+            trackColor={{ false: '#333', true: '#00f2fe' }}
+            thumbColor={'#fff'}
+          />
         </View>
       </View>
       <View style={styles.offlineList}>
@@ -137,12 +159,14 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
           <Animated.View key={pack.name} entering={FadeInDown.delay(80 * idx).duration(350)} style={styles.offlineCard}>
             <View style={styles.offlineTop}>
               <Text style={styles.offlineTitle}>{pack.name}</Text>
-              <Text style={styles.offlineBadge}>{pack.downloaded ? 'Ready' : 'Not Downloaded'}</Text>
+              <View style={[styles.offlineBadge, pack.downloaded && styles.offlineBadgeSuccess]}>
+                <Text style={[styles.offlineBadgeText, pack.downloaded && styles.offlineBadgeTextSuccess]}>
+                  {pack.downloaded ? 'Ready' : 'Pending'}
+                </Text>
+              </View>
             </View>
             <View style={styles.offlineMetaRow}>
-              <View style={styles.systemIconSmall}>
-                <Text style={styles.systemIconTextSmall}>DL</Text>
-              </View>
+              <Download size={14} color="#9ca3af" />
               <Text style={styles.offlineMetaText}>
                 {pack.size} • Last sync: {pack.syncedAt}
               </Text>
@@ -150,12 +174,10 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
           </Animated.View>
         ))}
       </View>
-      <View style={styles.systemCard}>
-        <View style={styles.systemIcon}>
-          <Text style={styles.systemIconText}>OFF</Text>
-        </View>
-        <Text style={styles.systemCardText}>
-          Cached routes, saved places, and emergency notes remain available without network.
+      <View style={styles.infoCard}>
+        <CloudOff size={20} color="#f59e0b" />
+        <Text style={styles.infoCardText}>
+          Downloaded areas remain fully mapped, routed, and searchable without cellular network.
         </Text>
       </View>
     </Animated.View>
@@ -164,8 +186,8 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderProfile = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Profile, Preferences & Privacy</Text>
-        <Text style={styles.sectionMeta}>Mapped directly to backend endpoints</Text>
+        <Text style={styles.sectionTitle}>Account Settings</Text>
+        <Text style={styles.sectionMeta}>Manage preferences, identity & data</Text>
       </View>
       <ProfilePreferencesPrivacyPanel onLoggedOut={onLoggedOut} />
     </Animated.View>
@@ -174,64 +196,138 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
   const renderAdmin = () => (
     <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Admin Dashboard</Text>
-        <Text style={styles.sectionMeta}>Users, events, reviews moderation, analytics</Text>
+        <Text style={styles.sectionTitle}>Command Center</Text>
+        <Text style={styles.sectionMeta}>Analytics, moderation & users</Text>
       </View>
       <AdminDashboardPanel />
     </Animated.View>
   );
 
+  const renderSocial = () => (
+    <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Traveler Network</Text>
+        <Text style={styles.sectionMeta}>Connect with friends & adventurers</Text>
+      </View>
+      <SocialPanel />
+    </Animated.View>
+  );
+
+  const renderMessages = () => (
+    <Animated.View entering={FadeInDown.duration(360)} style={styles.sectionContainer}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Inbox</Text>
+        <Text style={styles.sectionMeta}>Direct chats & secured connections</Text>
+      </View>
+      <DirectMessagingPanel />
+
+      <View style={[styles.sectionHeader, { marginTop: 24 }]}>
+        <Text style={styles.sectionTitle}>Event Groups</Text>
+        <Text style={styles.sectionMeta}>Coordinate with your trip members</Text>
+      </View>
+      <MessagingPanel />
+    </Animated.View>
+  );
+
+  const isTabActive = (tab: TabKey) => activeTab === tab;
+
   const renderContent = () => {
-    if (activeTab === 'events') return renderEvents();
-    if (activeTab === 'travel') return renderTravelPlanning();
-    if (activeTab === 'notifications') return renderNotifications();
-    if (activeTab === 'community') return renderCommunity();
-    if (activeTab === 'offline') return renderOffline();
-    if (activeTab === 'admin' && isAdmin) return renderAdmin();
-    if (activeTab === 'profile') return renderProfile();
-    return renderDiscover();
+    return (
+      <View style={styles.mainContentWrapper}>
+        <View style={[styles.tabContentContainer, !isTabActive('discover') && styles.hiddenTab]}>
+          {renderDiscover()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('events') && styles.hiddenTab]}>
+          {renderEvents()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('travel') && styles.hiddenTab]}>
+          {renderTravelPlanning()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('social') && styles.hiddenTab]}>
+          {renderSocial()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('messages') && styles.hiddenTab]}>
+          {renderMessages()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('notifications') && styles.hiddenTab]}>
+          {renderNotifications()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('community') && styles.hiddenTab]}>
+          {renderCommunity()}
+        </View>
+        <View style={[styles.tabContentContainer, !isTabActive('offline') && styles.hiddenTab]}>
+          {renderOffline()}
+        </View>
+        {isAdmin && (
+          <View style={[styles.tabContentContainer, !isTabActive('admin') && styles.hiddenTab]}>
+            {renderAdmin()}
+          </View>
+        )}
+        <View style={[styles.tabContentContainer, !isTabActive('profile') && styles.hiddenTab]}>
+          {renderProfile()}
+        </View>
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.bgBlobTop} />
-      <View style={styles.bgBlobBottom} />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Animated.View entering={FadeIn.duration(420)} style={styles.headerCard}>
-          <View style={styles.logoRow}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoText}>EE</Text>
-            </View>
-            <View>
-              <Text style={styles.appTitle}>ExploreEase</Text>
-              <Text style={styles.appSubtitle}>Smart assistant for seamless travel flow</Text>
-            </View>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        {/* Immersive Header Image */}
+        <ImageBackground source={{ uri: HEADER_BG }} style={styles.heroBackground} imageStyle={styles.heroImage}>
+          <View style={styles.heroOverlay}>
+            <Animated.View entering={FadeIn.duration(500)} style={styles.heroContent}>
+              <View style={styles.logoRow}>
+                <View style={styles.logoBox}>
+                  <Compass color="#fff" size={20} strokeWidth={2.5} />
+                </View>
+                <View>
+                  <Text style={styles.appTitle}>ExploreEase</Text>
+                  <Text style={styles.appSubtitle}>Wander beyond limits</Text>
+                </View>
+              </View>
+
+              <View style={styles.searchWrap}>
+                <Search color="#9ca3af" size={18} style={styles.searchIcon} />
+                <TextInput
+                  placeholder="Where do you want to go?"
+                  placeholderTextColor="#9ca3af"
+                  value={searchText}
+                  onChangeText={setSearchText}
+                  style={styles.searchInput}
+                />
+              </View>
+            </Animated.View>
           </View>
-          <View style={styles.searchWrap}>
-            <TextInput
-              placeholder="Search attractions, food, events..."
-              placeholderTextColor="#6b7885"
-              value={searchText}
-              onChangeText={setSearchText}
-              style={styles.searchInput}
-            />
-          </View>
-          <View style={styles.tabRow}>
-            {tabs.map((tab) => (
-              <Pressable
-                key={tab.key}
-                onPress={() => setActiveTab(tab.key)}
-                style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
-              >
-                <Text style={[styles.tabButtonText, activeTab === tab.key && styles.tabButtonTextActive]}>
-                  {tab.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+        </ImageBackground>
+
+        {/* Tab Navigation Hub */}
+        <Animated.View entering={FadeInDown.duration(400)} style={styles.tabHub}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.key;
+              return (
+                <Pressable
+                  key={tab.key}
+                  onPress={() => setActiveTab(tab.key)}
+                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                >
+                  <Icon size={16} color={isActive ? '#0f172a' : '#9ca3af'} />
+                  <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
         </Animated.View>
 
-        {renderContent()}
+        {/* Dynamic Content Panel */}
+        <View style={styles.mainContent}>
+          {renderContent()}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -240,326 +336,209 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#090909',
+    backgroundColor: '#0a0a0a',
   },
-  bgBlobTop: {
-    position: 'absolute',
-    top: -130,
-    right: -90,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: '#141414',
+  scrollContent: {
+    paddingBottom: 40,
   },
-  bgBlobBottom: {
-    position: 'absolute',
-    bottom: -150,
-    left: -110,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: '#111111',
+  heroBackground: {
+    width: '100%',
+    height: 240,
+    justifyContent: 'flex-end',
   },
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 34,
-    gap: 14,
+  heroImage: {
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
-  headerCard: {
-    marginTop: 8,
-    backgroundColor: '#111111',
-    borderWidth: 1,
-    borderColor: '#2b2b2b',
-    borderRadius: 18,
-    padding: 14,
-    gap: 12,
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)', // Gradient-like darkening
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    justifyContent: 'flex-end',
+    padding: 20,
+    paddingBottom: 28,
+  },
+  heroContent: {
+    gap: 16,
   },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  logoBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  logoText: {
-    color: '#0b0b0b',
-    fontSize: 12,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  appTitle: {
-    color: '#f5f5f5',
-    fontSize: 22,
-    fontWeight: '700',
-    letterSpacing: 0.7,
-    fontFamily: 'monospace',
-  },
-  appSubtitle: {
-    color: '#a7a7a7',
-    fontSize: 12,
-  },
-  searchWrap: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    backgroundColor: '#171717',
-  },
-  searchInput: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#f2f2f2',
-    fontSize: 14,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tabButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#343434',
-    backgroundColor: '#181818',
-  },
-  tabButtonActive: {
-    backgroundColor: '#f5f5f5',
-    borderColor: '#f5f5f5',
-  },
-  tabButtonText: {
-    color: '#9f9f9f',
-    fontWeight: '600',
-    fontSize: 12,
-    fontFamily: 'monospace',
-  },
-  tabButtonTextActive: {
-    color: '#0b0b0b',
-  },
-  sectionContainer: {
-    backgroundColor: '#101010',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    borderRadius: 18,
-    padding: 14,
     gap: 12,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    color: '#f4f4f4',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    fontFamily: 'monospace',
-  },
-  sectionMeta: {
-    color: '#979797',
-    fontSize: 12,
-  },
-  cardGrid: {
-    gap: 10,
-  },
-  cardGridWide: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  discoverCard: {
-    borderWidth: 1,
-    borderColor: '#303030',
-    borderRadius: 14,
-    backgroundColor: '#171717',
-    padding: 11,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  discoverCardWide: {
-    width: '48%',
-  },
-  discoverIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 9,
-    backgroundColor: '#242424',
+  logoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#00f2fe',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#00f2fe',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  discoverIconCode: {
+  appTitle: {
     color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-    fontFamily: 'monospace',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
-  discoverTextWrap: {
+  appSubtitle: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
     flex: 1,
-    gap: 5,
+    paddingVertical: 14,
+    color: '#ffffff',
+    fontSize: 15,
   },
-  discoverTitle: {
-    color: '#f0f0f0',
-    fontSize: 14,
-    fontWeight: '700',
+  tabHub: {
+    marginTop: -20,
+    zIndex: 10,
   },
-  discoverSubtitle: {
-    color: '#a4a4a4',
-    fontSize: 12,
-    lineHeight: 17,
+  tabScroll: {
+    paddingHorizontal: 16,
+    gap: 10,
+    paddingBottom: 10,
   },
-  discoverMetaRow: {
+  tabButton: {
     flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 100,
+    backgroundColor: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#374151',
     gap: 8,
-    flexWrap: 'wrap',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  metaPill: {
-    fontSize: 11,
-    color: '#d8d8d8',
-    backgroundColor: '#242424',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  tabButtonActive: {
+    backgroundColor: '#00f2fe',
+    borderColor: '#00f2fe',
   },
-  compactButton: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  compactButtonText: {
-    color: '#0b0b0b',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  compactButtonPlus: {
-    color: '#0b0b0b',
-    fontSize: 14,
+  tabButtonText: {
+    color: '#9ca3af',
     fontWeight: '700',
-    lineHeight: 14,
+    fontSize: 13,
   },
-  eventList: {
-    gap: 10,
+  tabButtonTextActive: {
+    color: '#0f172a',
   },
-  eventCard: {
+  mainContent: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+  },
+  mainContentWrapper: {
+    flex: 1,
+  },
+  tabContentContainer: {
+    flex: 1,
+  },
+  hiddenTab: {
+    display: 'none',
+  },
+  sectionContainer: {
+    backgroundColor: '#111827',
+    borderRadius: 24,
+    padding: 20,
+    gap: 16,
     borderWidth: 1,
-    borderColor: '#2f2f2f',
-    borderRadius: 12,
-    backgroundColor: '#171717',
-    padding: 11,
-    gap: 7,
+    borderColor: '#1f2937',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  eventTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  eventTitle: {
-    color: '#f1f1f1',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  eventBadge: {
-    color: '#d4d4d4',
-    fontSize: 11,
-    backgroundColor: '#242424',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  eventMetaRow: {
-    flexDirection: 'row',
-    gap: 6,
-    alignItems: 'center',
-  },
-  eventMetaText: {
-    color: '#a7a7a7',
-    fontSize: 12,
-  },
-  reviewList: {
-    gap: 10,
-  },
-  reviewCard: {
-    borderWidth: 1,
-    borderColor: '#303030',
-    borderRadius: 12,
-    backgroundColor: '#171717',
-    padding: 11,
-    gap: 7,
-  },
-  reviewTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  reviewPlace: {
-    color: '#f2f2f2',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  reviewScore: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  sectionHeader: {
     gap: 4,
   },
-  reviewScoreText: {
-    color: '#f1f1f1',
-    fontSize: 12,
-    fontWeight: '700',
+  sectionTitle: {
+    color: '#f8fafc',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
-  reviewStar: {
-    color: '#f5f5f5',
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 16,
+  sectionMeta: {
+    color: '#94a3b8',
+    fontSize: 13,
   },
-  reviewComment: {
-    color: '#a8a8a8',
-    fontSize: 12,
-    lineHeight: 18,
+  infoCard: {
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 242, 254, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 242, 254, 0.1)',
+    padding: 16,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    marginTop: 10,
   },
-  reviewAuthor: {
-    color: '#8f8f8f',
-    fontSize: 11,
+  infoCardText: {
+    flex: 1,
+    color: '#cbd5e1',
+    fontSize: 13,
+    lineHeight: 20,
   },
   offlineList: {
-    gap: 10,
+    gap: 12,
   },
   offlineCard: {
     borderWidth: 1,
-    borderColor: '#303030',
-    borderRadius: 12,
-    backgroundColor: '#171717',
-    padding: 11,
-    gap: 7,
+    borderColor: '#374151',
+    borderRadius: 16,
+    backgroundColor: '#1f2937',
+    padding: 14,
+    gap: 10,
   },
   offlineTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
   },
   offlineTitle: {
-    color: '#f0f0f0',
-    fontSize: 14,
+    color: '#f8fafc',
+    fontSize: 15,
     fontWeight: '700',
   },
   offlineBadge: {
-    color: '#d5d5d5',
-    fontSize: 10,
-    backgroundColor: '#242424',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
+    backgroundColor: '#374151',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+  },
+  offlineBadgeSuccess: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  offlineBadgeText: {
+    color: '#9ca3af',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  offlineBadgeTextSuccess: {
+    color: '#10b981',
   },
   offlineMetaRow: {
     flexDirection: 'row',
@@ -567,167 +546,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   offlineMetaText: {
-    color: '#a5a5a5',
+    color: '#9ca3af',
     fontSize: 12,
   },
   switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    backgroundColor: '#1f2937',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 8,
   },
   switchLabel: {
-    color: '#c8c8c8',
-    fontSize: 12,
-  },
-  systemCard: {
-    borderRadius: 12,
-    backgroundColor: '#161616',
-    borderWidth: 1,
-    borderColor: '#2d2d2d',
-    padding: 10,
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-start',
-  },
-  systemCardText: {
-    flex: 1,
-    color: '#c8c8c8',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  systemIcon: {
-    width: 28,
-    height: 18,
-    borderRadius: 6,
-    backgroundColor: '#262626',
-    borderWidth: 1,
-    borderColor: '#3b3b3b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  systemIconSmall: {
-    width: 24,
-    height: 15,
-    borderRadius: 5,
-    backgroundColor: '#262626',
-    borderWidth: 1,
-    borderColor: '#3b3b3b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  systemIconText: {
-    color: '#ffffff',
-    fontSize: 8,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  systemIconTextSmall: {
-    color: '#ffffff',
-    fontSize: 7,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  preferenceCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#303030',
-    backgroundColor: '#171717',
-    padding: 11,
-    gap: 10,
-  },
-  fieldLabel: {
-    color: '#f3f3f3',
-    fontSize: 13,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#363636',
-    backgroundColor: '#222222',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  chipActive: {
-    borderColor: '#f5f5f5',
-    backgroundColor: '#343434',
-  },
-  chipText: {
-    color: '#bcbcbc',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#ffffff',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: '#111111',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#2f2f2f',
-    padding: 14,
-    gap: 10,
-  },
-  modalTitle: {
-    color: '#f5f5f5',
-    fontSize: 17,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-  },
-  modalInput: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#353535',
-    backgroundColor: '#1a1a1a',
-    color: '#f3f3f3',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    color: '#f8fafc',
     fontSize: 14,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 4,
-  },
-  modalButtonGhost: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#3a3a3a',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    backgroundColor: '#1b1b1b',
-  },
-  modalButtonGhostText: {
-    color: '#d0d0d0',
-    fontSize: 13,
     fontWeight: '600',
-  },
-  modalButtonPrimary: {
-    borderRadius: 10,
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  modalButtonPrimaryText: {
-    color: '#0b0b0b',
-    fontSize: 13,
-    fontWeight: '700',
   },
 });
 

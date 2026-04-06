@@ -137,6 +137,7 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
   const [busy, setBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus());
   const [loadedFromCache, setLoadedFromCache] = useState(false);
+  const [googleLinked, setGoogleLinked] = useState(false);
 
   const profileName = useMemo(() => {
     const value = `${profile.firstName} ${profile.lastName}`.trim();
@@ -181,9 +182,14 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
 
     setSession(currentSession);
     try {
-      const [profileRes, preferencesRes] = await Promise.all([userApi.getProfile(), userApi.getPreferences()]);
+      const [profileRes, preferencesRes, googleLinkedRes] = await Promise.all([
+        userApi.getProfile(),
+        userApi.getPreferences(),
+        authApi.isGoogleLinked(),
+      ]);
       setProfile(normalizeProfile(profileRes as Record<string, any>));
       setPreferences(normalizePreferences(preferencesRes as Record<string, any>));
+      setGoogleLinked(!!googleLinkedRes);
       setLoadedFromCache(false);
       await cacheProfileSnapshot(profileRes as UserProfile, preferencesRes as UserPreferences);
     } catch (error: any) {
@@ -327,6 +333,13 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
       logoutLocal();
     });
 
+  const disconnectGoogle = () =>
+    run(async () => {
+      await authApi.disconnectGoogle();
+      setGoogleLinked(false);
+      Alert.alert('Done', 'Google account disconnected.');
+    });
+
   if (!session) {
     return (
       <View style={styles.card}>
@@ -365,10 +378,19 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
         <InfoRow label="Signed in as" value={session.user.email} />
         <InfoRow label="Display name" value={profileName} />
         <InfoRow label="Credentials" value="Encrypted in transit (HTTPS/TLS)" />
+        <InfoRow label="Google OAuth" value={googleLinked ? 'Linked' : 'Not linked'} />
         <InfoRow label="Sensitive channels" value={secureMessaging ? 'E2E mode ON (UI flag)' : 'E2E mode OFF'} />
         <SwitchRow label="Enable biometric lock (optional)" value={biometricLock} onValueChange={setBiometricLock} />
         <SwitchRow label="Enable secure chat mode" value={secureMessaging} onValueChange={setSecureMessaging} />
         <Text style={styles.helper}>Biometric and E2E toggles are app-level controls and can be bound to native modules.</Text>
+        {googleLinked ? (
+          <Button
+            label={busy ? 'Working...' : 'Disconnect Google'}
+            onPress={disconnectGoogle}
+            disabled={busy}
+            kind="ghost"
+          />
+        ) : null}
         <Button label={busy ? 'Working...' : 'Logout'} onPress={logout} disabled={busy} kind="ghost" />
       </View>
 
