@@ -357,6 +357,49 @@ export const userApi = {
     );
   },
 
+  async uploadProfilePicture(input: { uri?: string; file?: File; name?: string; type?: string }) {
+    const formData = new FormData();
+    if (input.file) {
+      formData.append('file', input.file);
+    } else if (input.uri) {
+      formData.append('file', {
+        uri: input.uri,
+        name: input.name || `profile-${Date.now()}.jpg`,
+        type: input.type || 'image/jpeg',
+      } as any);
+    } else {
+      throw new Error('Missing file to upload');
+    }
+
+    const send = async (retryOnUnauthorized: boolean): Promise<UserProfile> => {
+      const headers: Record<string, string> = {};
+      if (activeSession?.accessToken) {
+        headers.Authorization = `Bearer ${activeSession.accessToken}`;
+      }
+
+      const response = await fetch(`${API_URL}/api/user/profile/picture`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      if (response.status === 401 && retryOnUnauthorized && activeSession?.refreshToken) {
+        const refreshed = await refreshSessionToken();
+        if (refreshed) {
+          return send(false);
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(await getErrorMessage(response));
+      }
+
+      return parsePayload<UserProfile>(response);
+    };
+
+    return send(true);
+  },
+
   async getPreferences() {
     return request<UserPreferences>('/api/user/preferences', { method: 'GET' }, { auth: true });
   },
@@ -606,6 +649,7 @@ export type EventItem = {
   imageUrl: string | null;
   organizerUsername: string;
   organizerId: number;
+  reportCount: number;
   bookmarked: boolean;
   countdownSeconds: number | null;
   createdAt: string;
@@ -717,6 +761,14 @@ export const eventApi = {
     return request<{ bookmarked: boolean }>(
       `/api/events/${eventId}/bookmark`,
       { method: 'POST' },
+      { auth: true }
+    );
+  },
+
+  async report(eventId: number, input: { reason: string; details?: string }) {
+    return request<{ message: string }>(
+      `/api/events/${eventId}/report`,
+      { method: 'POST', body: JSON.stringify(input) },
       { auth: true }
     );
   },
@@ -885,6 +937,7 @@ export type ReviewItem = {
   photoUrl?: string | null;
   authorUsername: string;
   authorId: number;
+  authorProfilePictureUrl?: string | null;
   helpfulCount: number;
   helpfulByCurrentUser: boolean;
   flagCount: number;
@@ -1029,6 +1082,7 @@ export type AdminUserProfile = {
   isActive: boolean;
   isSuperuser: boolean;
   isStaff: boolean;
+  reportCount: number;
   dateJoined?: string | null;
   lastLogin?: string | null;
   firstName?: string | null;
@@ -1449,6 +1503,14 @@ export const socialApi = {
     return request<UserPublicProfile>(`/api/social/user/${userId}`, { method: 'GET' }, { auth: true });
   },
 
+  async reportUser(userId: number, input: { reason: string; details?: string }) {
+    return request<{ message: string }>(
+      `/api/social/user/${userId}/report`,
+      { method: 'POST', body: JSON.stringify(input) },
+      { auth: true }
+    );
+  },
+
   async getFeed(page = 0, size = 20) {
     const query = buildQuery({ page, size });
     return request<ActivityFeedItem[]>(`/api/social/feed${query}`, { method: 'GET' }, { auth: true });
@@ -1629,6 +1691,7 @@ export type EventChatParticipantResponse = {
   directAllowed: boolean;
   hasChatPublicKey: boolean;
   publicKey: string | null;
+  profilePictureUrl: string | null;
 };
 
 export type ChatParticipant = EventChatParticipantResponse;
@@ -1641,6 +1704,7 @@ export type ChatMessage = {
   senderId: number;
   senderName: string;
   senderPublicKey: string | null;
+  senderProfilePictureUrl: string | null;
   recipientId: number | null;
   ciphertext: string;
   contentNonce: string;

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import {
+  apiBaseUrl,
   CreateReviewInput,
   ReviewItem,
   ReviewSortBy,
@@ -51,6 +52,17 @@ const defaultForm: CreateReviewInput = {
   rating: 5,
   comment: '',
   photoUrl: '',
+};
+
+const resolveAvatarUri = (value: string | null | undefined) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
+  if (value.startsWith('/')) {
+    return `${apiBaseUrl}${value}`;
+  }
+  return `${apiBaseUrl}/${value}`;
 };
 
 const CommunityReviewsPanel: React.FC = () => {
@@ -383,6 +395,7 @@ const CommunityReviewsPanel: React.FC = () => {
     const meta = targetMeta(review.targetType);
     const isOwner = currentUserId === review.authorId;
     const showReport = !isOwner && activeView !== 'admin';
+    const authorAvatarUri = resolveAvatarUri(review.authorProfilePictureUrl);
 
     return (
       <Animated.View
@@ -438,9 +451,18 @@ const CommunityReviewsPanel: React.FC = () => {
         )}
 
         <View style={styles.reviewFooter}>
-          <Text style={styles.reviewMeta}>
-            by {review.authorUsername} · {formatDate(review.createdAt)}
-          </Text>
+          <View style={styles.reviewAuthorWrap}>
+            {authorAvatarUri ? (
+              <Image source={{ uri: authorAvatarUri }} style={styles.reviewAuthorAvatar} />
+            ) : (
+              <View style={styles.reviewAuthorAvatarFallback}>
+                <Text style={styles.reviewAuthorAvatarText}>{review.authorUsername?.charAt(0).toUpperCase() || '?'}</Text>
+              </View>
+            )}
+            <Text style={styles.reviewMeta}>
+              by {review.authorUsername} · {formatDate(review.createdAt)}
+            </Text>
+          </View>
           <Text style={styles.helpfulCount}>Helpful: {review.helpfulCount || 0}</Text>
         </View>
 
@@ -920,6 +942,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  reviewAuthorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  reviewAuthorAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  reviewAuthorAvatarFallback: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewAuthorAvatarText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
   },
   reviewMeta: { color: '#8c8c8c', fontSize: 11 },
   helpfulCount: { color: '#94a3b8', fontSize: 11, fontFamily: 'monospace' },

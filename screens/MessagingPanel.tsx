@@ -15,6 +15,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import {
+  apiBaseUrl,
   chatApi,
   ChatEventSummary,
   ChatMessageKind,
@@ -65,6 +66,17 @@ const messagePreview = (message: DecryptedChatMessage) => {
     return 'Shared an image';
   }
   return message.payload.label || `${message.payload.latitude.toFixed(4)}, ${message.payload.longitude.toFixed(4)}`;
+};
+
+const resolveAvatarUri = (value: string | null | undefined) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
+  if (value.startsWith('/')) {
+    return `${apiBaseUrl}${value}`;
+  }
+  return `${apiBaseUrl}/${value}`;
 };
 
 const MessagingPanel = () => {
@@ -456,7 +468,16 @@ const MessagingPanel = () => {
                   scope === 'DIRECT' && directUserId === peer.userId && styles.scopeButtonActive,
                 ]}
               >
-                <Text style={styles.scopeText}>{peer.organizer ? 'Organizer' : peer.username}</Text>
+                <View style={styles.scopePeerWrap}>
+                  {resolveAvatarUri(peer.profilePictureUrl) ? (
+                    <Image source={{ uri: resolveAvatarUri(peer.profilePictureUrl)! }} style={styles.scopePeerAvatar} />
+                  ) : (
+                    <View style={styles.scopePeerAvatarFallback}>
+                      <Text style={styles.scopePeerAvatarText}>{peer.username?.charAt(0).toUpperCase() || '?'}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.scopeText}>{peer.organizer ? 'Organizer' : peer.username}</Text>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -501,6 +522,7 @@ const MessagingPanel = () => {
               const mine = message.senderId === currentUser.id;
               const locationPayload = message.payload?.kind === 'LOCATION' ? message.payload : null;
               const imagePayload = message.payload?.kind === 'IMAGE' ? message.payload : null;
+              const senderAvatarUri = resolveAvatarUri(message.senderProfilePictureUrl);
               const imageUri = imagePayload?.imageBase64
                 ? `data:${imagePayload.mimeType || 'image/jpeg'};base64,${imagePayload.imageBase64}`
                 : null;
@@ -512,7 +534,16 @@ const MessagingPanel = () => {
                   style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleTheirs]}
                 >
                   <View style={styles.messageTopRow}>
-                    <Text style={styles.messageSender}>{mine ? 'You' : message.senderName}</Text>
+                    <View style={styles.messageSenderWrap}>
+                      {senderAvatarUri ? (
+                        <Image source={{ uri: senderAvatarUri }} style={styles.messageSenderAvatar} />
+                      ) : (
+                        <View style={styles.messageSenderAvatarFallback}>
+                          <Text style={styles.messageSenderAvatarText}>{(mine ? 'Y' : message.senderName?.charAt(0).toUpperCase()) || '?'}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.messageSender}>{mine ? 'You' : message.senderName}</Text>
+                    </View>
                     <Text style={styles.messageTime}>{formatStamp(message.createdAt)}</Text>
                   </View>
 
@@ -698,6 +729,29 @@ const styles = StyleSheet.create({
     color: '#fff7ed',
     fontWeight: '700',
   },
+  scopePeerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  scopePeerAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  scopePeerAvatarFallback: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#334155',
+  },
+  scopePeerAvatarText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   pinSection: {
     gap: 10,
   },
@@ -775,6 +829,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  messageSenderWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  messageSenderAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  messageSenderAvatarFallback: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageSenderAvatarText: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
   },
   messageSender: {
     color: '#fdba74',

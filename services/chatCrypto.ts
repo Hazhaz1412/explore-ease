@@ -48,6 +48,7 @@ export type DecryptedChatMessage = {
   kind: ChatMessageKind;
   senderId: number;
   senderName: string;
+  senderProfilePictureUrl: string | null;
   recipientId: number | null;
   createdAt: string;
   pinned: boolean;
@@ -167,6 +168,7 @@ export const decryptChatMessage = async (message: ChatMessage): Promise<Decrypte
       kind: message.kind,
       senderId: message.senderId,
       senderName: message.senderName,
+      senderProfilePictureUrl: message.senderProfilePictureUrl,
       recipientId: message.recipientId,
       createdAt: message.createdAt,
       pinned: message.pinned,
@@ -184,6 +186,7 @@ export const decryptChatMessage = async (message: ChatMessage): Promise<Decrypte
       kind: message.kind,
       senderId: message.senderId,
       senderName: message.senderName,
+      senderProfilePictureUrl: message.senderProfilePictureUrl,
       recipientId: message.recipientId,
       createdAt: message.createdAt,
       pinned: message.pinned,

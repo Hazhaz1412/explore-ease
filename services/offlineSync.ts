@@ -1,6 +1,8 @@
 import {
   type DiscoveryCategory,
   type DiscoveryItem,
+  type LocationDiscovery,
+  type LocationSnapshot,
   type EventItem,
   type EventStatus,
   type EventType,
@@ -78,6 +80,7 @@ const STORAGE_KEYS = {
   discovery: 'exploreease.cache.discovery.v1',
   events: 'exploreease.cache.events.v1',
   profile: 'exploreease.cache.profile.v1',
+  location: 'exploreease.cache.location.v1',
   recentDiscoverySearches: 'exploreease.cache.searches.discovery.v1',
   recentEventSearches: 'exploreease.cache.searches.events.v1',
 } as const;
@@ -158,12 +161,106 @@ export type ProfileCacheSnapshot = {
   preferences: UserPreferences;
 };
 
+export type LocationCacheSnapshot = {
+  updatedAt: number;
+  currentLocation: LocationSnapshot | null;
+  discovery: LocationDiscovery | null;
+};
+
 const defaultDiscoveryCache = (): DiscoveryCacheSnapshot => ({
   updatedAt: Date.now(),
-  bookmarks: [],
-  featuredAttractions: [],
-  featuredCuisines: [],
-  featuredActivities: [],
+  bookmarks: [
+    {
+      id: 'sample-1',
+      name: 'Iconic Museum',
+      category: 'ATTRACTION',
+      tags: ['museum', 'art', 'cultural'],
+      shortDescription: 'A premier gallery showcasing modern and contemporary art',
+      latitude: 16.0678,
+      longitude: 108.2208,
+      distanceKm: 2.5,
+      rating: 4.7,
+      reviewCount: 328,
+      priceLevel: 3,
+      popularityScore: 85,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1564720986137-d5dd41f3c663?auto=format&fit=crop&q=80&w=600',
+      pricingText: '$$$',
+      operationalHours: '9:00 AM - 6:00 PM',
+      openNow: true,
+      availabilityLabel: 'Open now',
+      directionsUrl: 'https://www.google.com/maps/search/?api=1&query=museum',
+      bookmarked: true,
+    },
+  ],
+  featuredAttractions: [
+    {
+      id: 'attr-1',
+      name: 'Ancient Temple',
+      category: 'ATTRACTION',
+      tags: ['temple', 'historical', 'spiritual'],
+      shortDescription: 'Historic shrine with stunning architecture and cultural significance',
+      latitude: 16.0755,
+      longitude: 108.2252,
+      distanceKm: 1.2,
+      rating: 4.8,
+      reviewCount: 612,
+      priceLevel: 1,
+      popularityScore: 92,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1548013146-72f27e1f306d?auto=format&fit=crop&q=80&w=600',
+      pricingText: '$',
+      operationalHours: '7:00 AM - 9:00 PM',
+      openNow: true,
+      availabilityLabel: 'Open now',
+      directionsUrl: 'https://www.google.com/maps/search/?api=1&query=temple',
+      bookmarked: false,
+    },
+  ],
+  featuredCuisines: [
+    {
+      id: 'cuisine-1',
+      name: 'Local Cuisine Restaurant',
+      category: 'CUISINE',
+      tags: ['vietnamese', 'authentic', 'traditional'],
+      shortDescription: 'Traditional flavors and fresh local ingredients',
+      latitude: 16.0645,
+      longitude: 108.2190,
+      distanceKm: 0.8,
+      rating: 4.6,
+      reviewCount: 456,
+      priceLevel: 2,
+      popularityScore: 78,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1495521821757-a1efb6729352?auto=format&fit=crop&q=80&w=600',
+      pricingText: '$$',
+      operationalHours: '11:00 AM - 10:00 PM',
+      openNow: true,
+      availabilityLabel: 'Open now',
+      directionsUrl: 'https://www.google.com/maps/search/?api=1&query=restaurant',
+      bookmarked: false,
+    },
+  ],
+  featuredActivities: [
+    {
+      id: 'activity-1',
+      name: 'Adventure Tour Experience',
+      category: 'ACTIVITY',
+      tags: ['outdoor', 'adventure', 'tour'],
+      shortDescription: 'Guided tour through scenic landscapes and hidden gems',
+      latitude: 16.0700,
+      longitude: 108.2300,
+      distanceKm: 5.3,
+      rating: 4.9,
+      reviewCount: 289,
+      priceLevel: 3,
+      popularityScore: 88,
+      thumbnailUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&q=80&w=600',
+      pricingText: '$$$',
+      operationalHours: '6:00 AM - 6:00 PM',
+      openNow: true,
+      availabilityLabel: 'Open now',
+      directionsUrl: 'https://www.google.com/maps/search/?api=1&query=adventure',
+      bookmarked: false,
+    },
+  ],
   lastBrowseItems: [],
   lastBrowseQuery: '',
   lastBrowseCategory: 'ALL',
@@ -473,6 +570,19 @@ export const cacheProfileSnapshot = async (
     profile,
     preferences,
   } satisfies ProfileCacheSnapshot);
+};
+
+export const loadLocationSnapshot = async (): Promise<LocationCacheSnapshot | null> => {
+  return readStorage<LocationCacheSnapshot>(STORAGE_KEYS.location);
+};
+
+export const cacheLocationSnapshot = async (
+  snapshot: Omit<LocationCacheSnapshot, 'updatedAt'>
+): Promise<void> => {
+  await writeStorage(STORAGE_KEYS.location, {
+    ...snapshot,
+    updatedAt: Date.now(),
+  });
 };
 
 const searchKeyByScope = (scope: 'discovery' | 'events'): string =>

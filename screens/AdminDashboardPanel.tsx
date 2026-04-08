@@ -407,6 +407,7 @@ const AdminDashboardPanel: React.FC = () => {
               {!!(item.firstName || item.lastName) && (
                 <Text style={styles.metaText}>Name: {[item.firstName, item.lastName].filter(Boolean).join(' ')}</Text>
               )}
+              <Text style={styles.metaText}>Reports: {item.reportCount}</Text>
             </View>
           ))}
 
@@ -479,6 +480,7 @@ const AdminDashboardPanel: React.FC = () => {
               </View>
               <Text style={styles.metaText}>{item.eventType} • {item.status}</Text>
               <Text style={styles.metaText}>By {item.organizerUsername}</Text>
+              <Text style={styles.metaText}>Reports: {item.reportCount}</Text>
               <Text style={styles.metaText}>{formatDate(item.startDate)} → {formatDate(item.endDate)}</Text>
               {!!item.locationName && <Text style={styles.metaText}>Location: {item.locationName}</Text>}
               {!!item.moderationReason && <Text style={styles.warningText}>Reason: {item.moderationReason}</Text>}

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import {
+  apiBaseUrl,
   directMessageApi,
   DirectConversation,
   DirectMessageItem,
@@ -36,6 +38,17 @@ const formatTime = (iso: string | null | undefined) => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const resolveAvatarUri = (value: string | null | undefined) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
+  if (value.startsWith('/')) {
+    return `${apiBaseUrl}${value}`;
+  }
+  return `${apiBaseUrl}/${value}`;
 };
 
 type DmView = 'list' | 'chat' | 'new';
@@ -184,9 +197,13 @@ const DirectMessagingPanel = () => {
             style={styles.convCard}
           >
             <View style={styles.convAvatar}>
-              <Text style={styles.convAvatarText}>
-                {conv.peerUsername?.charAt(0).toUpperCase() || '?'}
-              </Text>
+              {resolveAvatarUri(conv.peerProfilePictureUrl) ? (
+                <Image source={{ uri: resolveAvatarUri(conv.peerProfilePictureUrl)! }} style={styles.convAvatarImage} />
+              ) : (
+                <Text style={styles.convAvatarText}>
+                  {conv.peerUsername?.charAt(0).toUpperCase() || '?'}
+                </Text>
+              )}
             </View>
             <View style={styles.convInfo}>
               <Text style={styles.convName}>{conv.peerUsername}</Text>
@@ -203,6 +220,9 @@ const DirectMessagingPanel = () => {
     <View style={styles.chatContainer}>
       <Pressable onPress={() => setView('list')} style={styles.chatBackBtn}>
         <Text style={styles.chatBackText}>← Back</Text>
+        {resolveAvatarUri(activeConv?.peerProfilePictureUrl || null) ? (
+          <Image source={{ uri: resolveAvatarUri(activeConv?.peerProfilePictureUrl || null)! }} style={styles.chatHeaderAvatar} />
+        ) : null}
         <Text style={styles.chatPeerName}>
           {activeConv?.peerUsername || 'Chat'}
         </Text>
@@ -293,9 +313,13 @@ const DirectMessagingPanel = () => {
             style={styles.searchUserCard}
           >
             <View style={styles.convAvatar}>
-              <Text style={styles.convAvatarText}>
-                {user.username?.charAt(0).toUpperCase() || '?'}
-              </Text>
+              {resolveAvatarUri(user.profilePictureUrl) ? (
+                <Image source={{ uri: resolveAvatarUri(user.profilePictureUrl)! }} style={styles.convAvatarImage} />
+              ) : (
+                <Text style={styles.convAvatarText}>
+                  {user.username?.charAt(0).toUpperCase() || '?'}
+                </Text>
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.convName}>{user.username}</Text>
@@ -341,7 +365,11 @@ const styles = StyleSheet.create({
   },
   convAvatar: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: '#2a2a2a', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#2a2a2a', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  convAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
   convAvatarText: { color: '#f5f5f5', fontSize: 18, fontWeight: '700' },
   convInfo: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -356,6 +384,7 @@ const styles = StyleSheet.create({
   chatContainer: { flex: 1, gap: 10 },
   chatBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
   chatBackText: { color: '#888', fontSize: 14 },
+  chatHeaderAvatar: { width: 24, height: 24, borderRadius: 12 },
   chatPeerName: { color: '#f2f2f2', fontSize: 16, fontWeight: '700' },
   messagesScroll: { flex: 1 },
   messagesContent: { gap: 8, paddingVertical: 8 },

@@ -90,7 +90,9 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
         <Text style={styles.sectionTitle}>Nearby Hotspots</Text>
         <Text style={styles.sectionMeta}>Hidden gems just around the corner</Text>
       </View>
-      <LocationDiscoveryPanel />
+      <View style={{ paddingHorizontal: 0 }}>
+        <LocationDiscoveryPanel />
+      </View>
     </Animated.View>
   );
 

@@ -27,7 +27,9 @@ import {
   Ticket,
   SlidersHorizontal,
   X,
+  Mic,
 } from 'lucide-react-native';
+import VoiceSearch from '../components/VoiceSearch';
 import {
   DiscoveryCategory,
   DiscoveryDetailResponse,
@@ -63,6 +65,10 @@ const canRenderNativeMap =
   !!MapViewComponent &&
   (typeof MapViewComponent === 'function' ||
     (typeof MapViewComponent === 'object' && MapViewComponent !== null && '$$typeof' in MapViewComponent));
+const hasGoogleMapsApiKey =
+  Platform.OS === 'web' ||
+  !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  !!process.env.GOOGLE_MAPS_API_KEY;
 const IframeElement: any = 'iframe';
 
 /* ────────────── Category metadata ────────────── */
@@ -119,6 +125,46 @@ const SORT_OPTIONS: { key: DiscoverySortBy; label: string }[] = [
 const getCategoryMeta = (category: DiscoveryCategory) =>
   CATEGORY_TABS.find((c) => c.key === category) || CATEGORY_TABS[0];
 
+const CATEGORY_GALLERY_FALLBACKS: Record<DiscoveryCategory, string[]> = {
+  ALL: [
+    'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1504814532849-9273a70d5f2e?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&q=80&w=1200',
+  ],
+  ATTRACTION: [
+    'https://images.unsplash.com/photo-1464278533981-50106e6176b1?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1508694350653-e4b1a7d7f6e8?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1489392191049-fc10c97e64b6?auto=format&fit=crop&q=80&w=1200',
+  ],
+  CUISINE: [
+    'https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=1200',
+  ],
+  ACTIVITY: [
+    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1510070009289-b5bc34383727?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1505873242700-f289a29e1e0f?auto=format&fit=crop&q=80&w=1200',
+  ],
+};
+
+const buildDetailGallery = (item: DiscoveryItem, imageUrls: string[] = []) => {
+  const unique: string[] = [];
+  const candidates = [
+    ...imageUrls,
+    item.thumbnailUrl,
+    ...CATEGORY_GALLERY_FALLBACKS[item.category],
+  ].filter((url): url is string => !!url && typeof url === 'string');
+
+  candidates.forEach((url) => {
+    if (!unique.includes(url)) {
+      unique.push(url);
+    }
+  });
+
+  return unique.slice(0, 6);
+};
+
 /* ════════════════════════════════════════════════════════════════════════════ */
 /*  DiscoveryModulePanel                                                      */
 /* ════════════════════════════════════════════════════════════════════════════ */
@@ -130,6 +176,7 @@ const DiscoveryModulePanel = () => {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showVoiceSearch, setShowVoiceSearch] = useState(false);
 
   /* ── filter state ── */
   const [sortBy, setSortBy] = useState<DiscoverySortBy>('RELEVANCE');
@@ -185,6 +232,21 @@ const DiscoveryModulePanel = () => {
     }
   };
 
+  const confirmRemoveFromSaved = async (placeName: string) => {
+    const message = `Remove "${placeName}" from your saved places?`;
+
+    if (Platform.OS === 'web' && typeof globalThis.confirm === 'function') {
+      return globalThis.confirm(message);
+    }
+
+    return new Promise<boolean>((resolve) => {
+      Alert.alert('Remove saved place', message, [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Remove', style: 'destructive', onPress: () => resolve(true) },
+      ]);
+    });
+  };
+
   /* ── data loaders ── */
   const loadBrowse = useCallback(
     async (cat?: DiscoveryCategory, searchQuery?: string, pageNum = 0) => {
@@ -220,6 +282,10 @@ const DiscoveryModulePanel = () => {
           setPage(0);
           setHasNext(false);
           setTotalItems((cached.lastBrowseItems || []).length);
+          setUsingOfflineData(true);
+          return;
+        }
+        if (isLikelyOfflineError(error)) {
           setUsingOfflineData(true);
           return;
         }
@@ -311,6 +377,10 @@ const DiscoveryModulePanel = () => {
           return;
         }
       }
+      if (isLikelyOfflineError(error)) {
+        setUsingOfflineData(true);
+        return;
+      }
       throw error;
     }
   }, [refLocation]);
@@ -328,6 +398,12 @@ const DiscoveryModulePanel = () => {
   /* ── bookmark toggle ── */
   const toggleBookmark = async (item: DiscoveryItem) => {
     const nextBookmarked = !item.bookmarked;
+
+    if (!nextBookmarked && activeView === 'saved') {
+      const confirmed = await confirmRemoveFromSaved(item.name);
+      if (!confirmed) return;
+    }
+
     const updateBookmark = (entry: DiscoveryItem) =>
       entry.id === item.id ? { ...entry, bookmarked: nextBookmarked } : entry;
 
@@ -390,9 +466,35 @@ const DiscoveryModulePanel = () => {
         latitude: refLocation.latitude,
         longitude: refLocation.longitude,
       });
-      setDetail(payload);
+      setDetail({
+        ...payload,
+        imageUrls: buildDetailGallery(payload.item, payload.imageUrls),
+      });
       setDetailVisible(true);
     } catch (error: any) {
+      const cached = await loadDiscoverySnapshot();
+      const cachedItem =
+        cached &&
+        [
+          ...(cached.bookmarks || []),
+          ...(cached.lastBrowseItems || []),
+          ...(cached.featuredAttractions || []),
+          ...(cached.featuredCuisines || []),
+          ...(cached.featuredActivities || []),
+        ].find((entry) => entry.id === item.id);
+
+      if (cachedItem) {
+        setDetail({
+          item: cachedItem,
+          longDescription:
+            cachedItem.shortDescription || 'Offline preview available. Connect again for full details.',
+          imageUrls: buildDetailGallery(cachedItem, cachedItem.thumbnailUrl ? [cachedItem.thumbnailUrl] : []),
+        });
+        setDetailVisible(true);
+        setUsingOfflineData(true);
+        return;
+      }
+
       Alert.alert('Error', error?.message || 'Cannot load detail');
     } finally {
       setLoadingDetail(false);
@@ -529,6 +631,10 @@ const DiscoveryModulePanel = () => {
   }, [query, recentSearches, syncStatus.isOnline]);
 
   const detailItem = detail?.item || null;
+  const detailGallery = useMemo(
+    () => (detailItem ? buildDetailGallery(detailItem, detail?.imageUrls || []) : []),
+    [detailItem, detail?.imageUrls]
+  );
   const isAllCategory = activeCategory === 'ALL';
 
   /* ════════════════ RENDER ════════════════ */
@@ -573,6 +679,16 @@ const DiscoveryModulePanel = () => {
               <X size={14} color="#888" strokeWidth={2} />
             </Pressable>
           )}
+          <Pressable 
+            style={styles.voiceButton} 
+            onPress={() => {
+              console.log('Voice button clicked! Platform.OS:', Platform.OS);
+              setShowVoiceSearch(!showVoiceSearch);
+            }} 
+            hitSlop={8}
+          >
+            <Mic size={14} color={showVoiceSearch ? '#00f2fe' : '#888'} strokeWidth={2} />
+          </Pressable>
           <Pressable style={styles.filterToggle} onPress={() => setShowFilters(!showFilters)}>
             <SlidersHorizontal size={14} color={showFilters ? '#090909' : '#ccc'} strokeWidth={2} />
           </Pressable>
@@ -581,8 +697,24 @@ const DiscoveryModulePanel = () => {
           </Pressable>
         </View>
 
+        {/* ─── Voice Search ─── */}
+        {showVoiceSearch && Platform.OS === 'web' && (
+          <VoiceSearch
+            placeholder="Listening..."
+            onSearchChange={(transcript, isFinal) => {
+              if (transcript) {
+                setQuery(transcript);
+                if (isFinal) {
+                  void refreshAll();
+                }
+              }
+            }}
+            onClose={() => setShowVoiceSearch(false)}
+          />
+        )}
+
         {/* ─── Autocomplete ─── */}
-        {showSuggestions && suggestions.length > 0 && (
+        {showSuggestions && suggestions.length > 0 && !showVoiceSearch && (
           <View style={styles.suggestionWrap}>
             {suggestions.map((sug) => (
               <Pressable key={sug} style={styles.suggestionItem} onPress={() => void applySuggestion(sug)}>
@@ -827,13 +959,49 @@ const DiscoveryModulePanel = () => {
                   <Text style={styles.detailRatingCount}>{detailItem.pricingText || '$'}</Text>
                 </View>
 
-                {/* image carousel */}
-                {(detail?.imageUrls || []).length > 0 && (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.imageRow}>
-                    {(detail?.imageUrls || []).map((url) => (
-                      <Image key={url} source={{ uri: url }} style={styles.detailImage} resizeMode="cover" />
-                    ))}
-                  </ScrollView>
+                {/* image gallery */}
+                {detailGallery.length > 0 && (
+                  <View style={styles.galleryWrap}>
+                    <ImageBackground
+                      source={{ uri: detailGallery[0] }}
+                      style={styles.heroImage}
+                      imageStyle={styles.heroImageStyle}
+                    >
+                      <View style={styles.heroOverlay}>
+                        <View style={styles.heroStatsRow}>
+                          <View style={styles.heroStatPill}>
+                            <Star size={12} color="#FFB347" fill="#FFB347" strokeWidth={0} />
+                            <Text style={styles.heroStatText}>{detailItem.rating.toFixed(1)}</Text>
+                          </View>
+                          <View style={styles.heroStatPill}>
+                            <MapPin size={12} color="#fff" strokeWidth={2} />
+                            <Text style={styles.heroStatText}>{detailItem.distanceKm} km</Text>
+                          </View>
+                          <View style={styles.heroStatPill}>
+                            <Text style={styles.heroStatText}>{detailItem.pricingText || '$'}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.heroAvailabilityPill}>
+                          <View
+                            style={[
+                              styles.availDotModern,
+                              detailItem.openNow === true && styles.availDotOpenModern,
+                              detailItem.openNow === false && styles.availDotClosedModern,
+                            ]}
+                          />
+                          <Text style={styles.heroAvailabilityText}>{detailItem.availabilityLabel || 'Unknown status'}</Text>
+                        </View>
+                      </View>
+                    </ImageBackground>
+
+                    {detailGallery.length > 1 && (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailRow}>
+                        {detailGallery.slice(1).map((url) => (
+                          <Image key={url} source={{ uri: url }} style={styles.detailThumbnail} resizeMode="cover" />
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
                 )}
 
                 {/* info cards */}
@@ -878,6 +1046,23 @@ const DiscoveryModulePanel = () => {
 
                 <Text style={styles.detailDesc}>{detail?.longDescription || detailItem.shortDescription}</Text>
 
+                <View style={styles.detailFactsRow}>
+                  <View style={styles.detailFactChip}>
+                    <Text style={styles.detailFactLabel}>Hours</Text>
+                    <Text style={styles.detailFactValue}>{detailItem.operationalHours || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.detailFactChip}>
+                    <Text style={styles.detailFactLabel}>Availability</Text>
+                    <Text style={styles.detailFactValue}>{detailItem.availabilityLabel || 'Unknown'}</Text>
+                  </View>
+                  <View style={styles.detailFactChip}>
+                    <Text style={styles.detailFactLabel}>GPS</Text>
+                    <Text style={styles.detailFactValue} numberOfLines={1}>
+                      {detailItem.latitude.toFixed(5)}, {detailItem.longitude.toFixed(5)}
+                    </Text>
+                  </View>
+                </View>
+
                 <View style={styles.detailActions}>
                   <Pressable style={styles.primaryBtnLg} onPress={() => void openDirections(detailItem.directionsUrl)}>
                     <MapPin size={14} color="#090909" strokeWidth={2} />
@@ -889,7 +1074,7 @@ const DiscoveryModulePanel = () => {
                     ) : (
                       <Bookmark size={14} color="#ccc" strokeWidth={2} />
                     )}
-                    <Text style={styles.ghostBtnLgText}>{detailItem.bookmarked ? 'Saved' : 'Save'}</Text>
+                    <Text style={styles.ghostBtnLgText}>{detailItem.bookmarked ? 'Remove saved' : 'Save'}</Text>
                   </Pressable>
                 </View>
               </ScrollView>
@@ -1096,7 +1281,7 @@ const MapPreview = ({ item }: { item: DiscoveryItem }) => {
       </View>
     );
   }
-  if (canRenderNativeMap && MarkerComponent) {
+  if (canRenderNativeMap && MarkerComponent && hasGoogleMapsApiKey) {
     return (
       <View style={styles.mapWrap}>
         <MapViewComponent
@@ -1120,7 +1305,11 @@ const MapPreview = ({ item }: { item: DiscoveryItem }) => {
   return (
     <View style={styles.mapFallback}>
       <MapPin size={16} color="#888" strokeWidth={2} />
-      <Text style={styles.mapFallbackText}>Map preview unavailable. Use "Get Directions" to navigate.</Text>
+      <Text style={styles.mapFallbackText}>
+        {hasGoogleMapsApiKey
+          ? 'Map preview unavailable. Use "Get Directions" to navigate.'
+          : 'Missing Google Maps API key. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env and rebuild dev build.'}
+      </Text>
     </View>
   );
 };
@@ -1193,6 +1382,14 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   searchInput: { flex: 1, color: '#f3f3f3', fontSize: 13, paddingVertical: 0 },
+  voiceButton: { 
+    marginRight: 4,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0, 242, 254, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   filterToggle: {
     width: 30,
     height: 30,
@@ -1550,6 +1747,63 @@ const styles = StyleSheet.create({
   detailRatingText: { color: '#FFB347', fontSize: 14, fontWeight: '700' },
   detailRatingCount: { color: '#999', fontSize: 12 },
   detailMetaSep: { color: '#555', fontSize: 12 },
+  galleryWrap: { gap: 10 },
+  heroImage: {
+    height: 220,
+    borderRadius: 16,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  heroImageStyle: { borderRadius: 16 },
+  heroOverlay: {
+    flex: 1,
+    justifyContent: 'space-between',
+    padding: 14,
+    backgroundColor: 'rgba(0,0,0,0.24)',
+  },
+  heroStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  heroStatPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.8)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  heroStatText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  heroAvailabilityPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  heroAvailabilityText: { color: '#f8fafc', fontSize: 12, fontWeight: '700' },
+  thumbnailRow: { gap: 8, paddingRight: 4 },
+  detailThumbnail: { width: 120, height: 84, borderRadius: 12, backgroundColor: '#1d1d1d' },
+  detailFactsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  detailFactChip: {
+    flexGrow: 1,
+    minWidth: '30%',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#161616',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  detailFactLabel: { color: '#888', fontSize: 10, fontFamily: 'monospace' },
+  detailFactValue: { color: '#ddd', fontSize: 12, fontWeight: '600' },
   imageRow: { gap: 8, paddingRight: 4 },
   detailImage: { width: 260, height: 160, borderRadius: 12, backgroundColor: '#1d1d1d' },
   detailInfoGrid: { flexDirection: 'row', gap: 8 },

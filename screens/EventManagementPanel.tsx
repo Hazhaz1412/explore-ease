@@ -62,6 +62,8 @@ const PRICING_FILTERS: { key: 'all' | 'free' | 'paid'; label: string }[] = [
   { key: 'paid', label: 'Paid' },
 ];
 
+const REPORT_REASONS = ['Spam', 'Offensive Content', 'False Information', 'Harassment', 'Other'];
+
 const TYPE_ICON: Record<string, string> = {
   FOOD: '🍜',
   CULTURE: '🏛',
@@ -411,6 +413,11 @@ const EventManagementPanel: React.FC = () => {
 
   // Detail modal
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportEvent, setReportEvent] = useState<EventItem | null>(null);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
+  const [reportDetails, setReportDetails] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   // Create modal
   const [createVisible, setCreateVisible] = useState(false);
@@ -611,6 +618,31 @@ const EventManagementPanel: React.FC = () => {
     }
   };
 
+  const openReport = (ev: EventItem) => {
+    setReportEvent(ev);
+    setReportReason(REPORT_REASONS[0]);
+    setReportDetails('');
+    setReportVisible(true);
+  };
+
+  const submitReport = async () => {
+    if (!reportEvent) return;
+    setReporting(true);
+    try {
+      await eventApi.report(reportEvent.id, {
+        reason: reportReason,
+        details: reportDetails.trim() || undefined,
+      });
+      setReportVisible(false);
+      setReportEvent(null);
+      Alert.alert('Reported', 'Event has been sent to moderation.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not report event');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   const handleCreate = async () => {
     if (!createForm.title.trim()) {
       Alert.alert('Validation', 'Please enter a title');
@@ -748,6 +780,9 @@ const EventManagementPanel: React.FC = () => {
             <Pressable style={styles.actionBtn} onPress={() => handleShare(ev)}>
               <Text style={styles.actionBtnText}>↗</Text>
             </Pressable>
+            <Pressable style={styles.actionBtn} onPress={() => openReport(ev)}>
+              <Text style={[styles.actionBtnText, { color: '#f59e0b' }]}>!</Text>
+            </Pressable>
             {ev.status !== 'COMPLETED' && (
               <Pressable style={[styles.actionBtn, styles.joinBtn]} onPress={() => handleJoin(ev)}>
                 <Text style={[styles.actionBtnText, { color: '#10b981' }]}>Join</Text>
@@ -819,6 +854,9 @@ const EventManagementPanel: React.FC = () => {
                 </Pressable>
                 <Pressable style={[styles.detailActionBtn, { backgroundColor: '#1e293b' }]} onPress={() => handleShare(ev)}>
                   <Text style={styles.detailActionText}>↗ Share</Text>
+                </Pressable>
+                <Pressable style={[styles.detailActionBtn, { backgroundColor: '#3f2b06' }]} onPress={() => openReport(ev)}>
+                  <Text style={[styles.detailActionText, { color: '#fbbf24' }]}>Report</Text>
                 </Pressable>
                 {ev.status !== 'COMPLETED' && (
                   <Pressable style={[styles.detailActionBtn, { backgroundColor: '#064e3b' }]} onPress={() => handleJoin(ev)}>
@@ -958,6 +996,57 @@ const EventManagementPanel: React.FC = () => {
     </Modal>
   );
 
+  const renderReportModal = () => {
+    if (!reportEvent) return null;
+    return (
+      <Modal visible={reportVisible} transparent animationType="fade" onRequestClose={() => setReportVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <Animated.View entering={FadeInUp.duration(300)} style={styles.reportModal}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.createTitle}>Report Event</Text>
+              <Text style={styles.metaItem}>{reportEvent.title}</Text>
+
+              <Text style={styles.inputLabel}>Reason</Text>
+              <View style={styles.reasonWrap}>
+                {REPORT_REASONS.map((reason) => {
+                  const active = reportReason === reason;
+                  return (
+                    <Pressable
+                      key={reason}
+                      onPress={() => setReportReason(reason)}
+                      style={[styles.reasonChip, active && styles.reasonChipActive]}
+                    >
+                      <Text style={[styles.reasonText, active && styles.reasonTextActive]}>{reason}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.inputLabel}>Details</Text>
+              <TextInput
+                style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
+                placeholder="Add more context (optional)"
+                placeholderTextColor="#6b7280"
+                value={reportDetails}
+                onChangeText={setReportDetails}
+                multiline
+              />
+
+              <View style={styles.reportActions}>
+                <Pressable style={[styles.detailActionBtn, { backgroundColor: '#1f2937' }]} onPress={() => setReportVisible(false)}>
+                  <Text style={styles.detailActionText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={[styles.detailActionBtn, { backgroundColor: '#7f1d1d' }]} onPress={submitReport} disabled={reporting}>
+                  <Text style={styles.detailActionText}>{reporting ? 'Sending…' : 'Report'}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </Animated.View>
+        </View>
+      </Modal>
+    );
+  };
+
   // ── Main render ──
   return (
     <View style={styles.container}>
@@ -1044,6 +1133,7 @@ const EventManagementPanel: React.FC = () => {
 
       {/* Modals */}
       {renderDetailModal()}
+      {renderReportModal()}
       {renderCreateModal()}
 
       {/* Date Time Picker */}
@@ -1509,6 +1599,50 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     fontSize: 14,
     fontWeight: '600',
+  },
+
+  // Report modal
+  reportModal: {
+    backgroundColor: '#0f0f0f',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1e1e1e',
+    padding: 20,
+    maxHeight: '90%',
+    width: '100%',
+    maxWidth: 480,
+  },
+  reasonWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  reasonChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#141414',
+  },
+  reasonChipActive: {
+    borderColor: '#f59e0b',
+    backgroundColor: '#451a03',
+  },
+  reasonText: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  reasonTextActive: {
+    color: '#fde68a',
+  },
+  reportActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 8,
   },
 
   // Create modal

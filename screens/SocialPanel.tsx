@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import {
+  apiBaseUrl,
   socialApi,
   UserPublicProfile,
   ActivityFeedItem as FeedItemType,
@@ -44,6 +46,18 @@ const ACTION_META: Record<string, { verb: string; emoji: string; gradient: [stri
 const getAction = (t: string) => ACTION_META[t] || { verb: 'interacted with', emoji: '📌', gradient: ['#94a3b8', '#64748b'] };
 
 const avatarColor = (id: number) => `hsl(${(id * 53) % 360}, 55%, 40%)`;
+const REPORT_REASONS = ['Spam', 'Offensive Content', 'False Information', 'Harassment', 'Other'];
+
+const resolveAvatarUri = (value: string | null | undefined) => {
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:') || value.startsWith('blob:')) {
+    return value;
+  }
+  if (value.startsWith('/')) {
+    return `${apiBaseUrl}${value}`;
+  }
+  return `${apiBaseUrl}/${value}`;
+};
 
 /* ────────── QR / Share Modal ────────── */
 
@@ -155,6 +169,11 @@ const SocialPanel = () => {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [shareUser, setShareUser] = useState<{ username: string; id: number } | null>(null);
+  const [reportUser, setReportUser] = useState<UserPublicProfile | null>(null);
+  const [reportVisible, setReportVisible] = useState(false);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
+  const [reportDetails, setReportDetails] = useState('');
+  const [reporting, setReporting] = useState(false);
 
   /* ── Data ── */
 
@@ -211,6 +230,31 @@ const SocialPanel = () => {
     } catch (e: any) { Alert.alert('Error', e?.message || 'Cannot unfollow'); }
   };
 
+  const openReport = (user: UserPublicProfile) => {
+    setReportUser(user);
+    setReportReason(REPORT_REASONS[0]);
+    setReportDetails('');
+    setReportVisible(true);
+  };
+
+  const submitReport = async () => {
+    if (!reportUser) return;
+    setReporting(true);
+    try {
+      await socialApi.reportUser(reportUser.id, {
+        reason: reportReason,
+        details: reportDetails.trim() || undefined,
+      });
+      setReportVisible(false);
+      setReportUser(null);
+      Alert.alert('Reported', 'User has been sent to moderation.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Could not report user');
+    } finally {
+      setReporting(false);
+    }
+  };
+
   useEffect(() => {
     if (tab === 'feed') void loadFeed();
     if (tab === 'followers') void loadFollowers();
@@ -222,10 +266,15 @@ const SocialPanel = () => {
   const UserCard = ({ user, index }: { user: UserPublicProfile; index: number }) => {
     const isSelf = currentUser && user.id === currentUser.id;
     const isFollowed = user.followedByCurrentUser;
+    const avatarUri = resolveAvatarUri(user.profilePictureUrl);
     return (
       <Animated.View entering={FadeInDown.delay(index * 30).duration(200)} style={s.userCard}>
         <View style={[s.avatar, { backgroundColor: avatarColor(user.id) }]}>
-          <Text style={s.avatarLetter}>{user.username?.charAt(0).toUpperCase() || '?'}</Text>
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={s.avatarImage} />
+          ) : (
+            <Text style={s.avatarLetter}>{user.username?.charAt(0).toUpperCase() || '?'}</Text>
+          )}
         </View>
         <View style={s.userBody}>
           <View style={s.userNameRow}>
@@ -253,9 +302,61 @@ const SocialPanel = () => {
             <Pressable onPress={() => setShareUser({ username: user.username, id: user.id })} style={s.iconBtn}>
               <Text style={s.iconText}>📱</Text>  
             </Pressable>
+            <Pressable onPress={() => openReport(user)} style={s.iconBtn}>
+              <Text style={[s.iconText, { color: '#fbbf24', fontWeight: '800' }]}>!</Text>
+            </Pressable>
           </View>
         </View>
       </Animated.View>
+    );
+  };
+
+  const renderReportModal = () => {
+    if (!reportUser) return null;
+    return (
+      <Modal visible={reportVisible} transparent animationType="fade" onRequestClose={() => setReportVisible(false)}>
+        <Pressable style={modal.backdrop} onPress={() => setReportVisible(false)}>
+          <Animated.View entering={FadeInUp.duration(280)} style={reportModal.card}>
+            <Text style={reportModal.title}>Report User</Text>
+            <Text style={reportModal.name}>@{reportUser.username}</Text>
+
+            <Text style={reportModal.label}>Reason</Text>
+            <View style={reportModal.reasonWrap}>
+              {REPORT_REASONS.map((reason) => {
+                const active = reportReason === reason;
+                return (
+                  <Pressable
+                    key={reason}
+                    onPress={() => setReportReason(reason)}
+                    style={[reportModal.reasonChip, active && reportModal.reasonChipActive]}
+                  >
+                    <Text style={[reportModal.reasonText, active && reportModal.reasonTextActive]}>{reason}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={reportModal.label}>Details</Text>
+            <TextInput
+              value={reportDetails}
+              onChangeText={setReportDetails}
+              placeholder="Add more context (optional)"
+              placeholderTextColor="#64748b"
+              multiline
+              style={reportModal.input}
+            />
+
+            <View style={reportModal.actions}>
+              <Pressable onPress={() => setReportVisible(false)} style={reportModal.cancelBtn}>
+                <Text style={reportModal.cancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={submitReport} disabled={reporting} style={reportModal.submitBtn}>
+                <Text style={reportModal.submitText}>{reporting ? 'Sending…' : 'Report'}</Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Modal>
     );
   };
 
@@ -301,13 +402,18 @@ const SocialPanel = () => {
           ) : (
             feed.map((item, idx) => {
               const a = getAction(item.actionType);
+              const actorAvatarUri = resolveAvatarUri(item.actorProfilePictureUrl);
               return (
                 <Animated.View key={item.id} entering={FadeInDown.delay(idx * 25).duration(200)} style={s.feedCard}>
                   <View style={[s.feedStripe, { backgroundColor: a.gradient[0] }]} />
                   <View style={s.feedInner}>
                     <View style={s.feedRow}>
                       <View style={[s.feedAvatar, { backgroundColor: avatarColor(item.actorId) }]}>
-                        <Text style={s.feedAvatarText}>{item.actorUsername?.charAt(0).toUpperCase() || '?'}</Text>
+                        {actorAvatarUri ? (
+                          <Image source={{ uri: actorAvatarUri }} style={s.feedAvatarImage} />
+                        ) : (
+                          <Text style={s.feedAvatarText}>{item.actorUsername?.charAt(0).toUpperCase() || '?'}</Text>
+                        )}
                       </View>
                       <View style={s.feedBody}>
                         <Text style={s.feedSentence}>
@@ -424,6 +530,7 @@ const SocialPanel = () => {
 
       {/* QR / Share modal */}
       <ShareProfileModal visible={!!shareUser} onClose={() => setShareUser(null)} user={shareUser} />
+      {renderReportModal()}
     </View>
   );
 };
@@ -469,7 +576,8 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.7)',
     borderWidth: 1, borderColor: 'rgba(30,41,59,0.6)',
   },
-  avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarLetter: { color: '#fff', fontSize: 20, fontWeight: '900' },
   userBody: { flex: 1, gap: 2 },
   userNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -504,7 +612,8 @@ const s = StyleSheet.create({
   feedStripe: { width: 4 },
   feedInner: { flex: 1, padding: 14, gap: 10 },
   feedRow: { flexDirection: 'row', gap: 12 },
-  feedAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  feedAvatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  feedAvatarImage: { width: '100%', height: '100%' },
   feedAvatarText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   feedBody: { flex: 1, gap: 6 },
   feedSentence: { color: '#e2e8f0', fontSize: 14, lineHeight: 20 },
@@ -532,6 +641,67 @@ const s = StyleSheet.create({
     backgroundColor: '#8b5cf6',
   },
   emptyActionText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+});
+
+const reportModal = StyleSheet.create({
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0f172a',
+    borderRadius: 24,
+    padding: 24,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.25)',
+  },
+  title: { color: '#f1f5f9', fontSize: 20, fontWeight: '800' },
+  name: { color: '#cbd5e1', fontSize: 14, fontWeight: '700', marginBottom: 4 },
+  label: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  reasonWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  reasonChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.8)',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  reasonChipActive: { borderColor: '#f59e0b', backgroundColor: '#451a03' },
+  reasonText: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
+  reasonTextActive: { color: '#fde68a' },
+  input: {
+    minHeight: 88,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: 'rgba(15,23,42,0.85)',
+    color: '#f1f5f9',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    textAlignVertical: 'top',
+  },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 2 },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  cancelText: { color: '#cbd5e1', fontSize: 13, fontWeight: '700' },
+  submitBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#b45309',
+  },
+  submitText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 });
 
 export default SocialPanel;

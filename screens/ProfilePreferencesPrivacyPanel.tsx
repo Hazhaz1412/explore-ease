@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { AuthSession, Interest, TravelStyle, UserPreferences, UserProfile, authApi, privacyApi, sessionStore, userApi } from '../services/backend';
 import {
   cacheProfileSnapshot,
@@ -143,6 +144,8 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
     const value = `${profile.firstName} ${profile.lastName}`.trim();
     return value || session?.user.username || 'Traveler';
   }, [profile.firstName, profile.lastName, session?.user.username]);
+
+  const profileInitial = useMemo(() => profileName.charAt(0).toUpperCase() || 'T', [profileName]);
 
   const logoutLocal = () => {
     sessionStore.clear();
@@ -289,6 +292,47 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
       }
     });
 
+  const uploadProfilePicture = () =>
+    run(async () => {
+      if (!syncStatus.isOnline) {
+        Alert.alert('Offline', 'Please reconnect to upload profile picture.');
+        return;
+      }
+
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error('Media library permission is required');
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.75,
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const fileSize = Number((asset as any).fileSize || 0);
+      if (fileSize > 5 * 1024 * 1024) {
+        throw new Error('Image is too large. Please choose a file <= 5MB');
+      }
+
+      const uploaded = await userApi.uploadProfilePicture({
+        uri: asset.uri,
+        file: (asset as any).file,
+        name: asset.fileName || `avatar-${Date.now()}.jpg`,
+        type: asset.mimeType || 'image/jpeg',
+      });
+
+      setProfile(normalizeProfile(uploaded as Record<string, any>));
+      setLoadedFromCache(false);
+      await cacheProfileSnapshot(uploaded as UserProfile, preferencesFormToPayload(preferences));
+      Alert.alert('Success', 'Profile picture updated');
+    });
+
   const showDataExport = () =>
     run(async () => {
       const payload = await privacyApi.exportData();
@@ -414,6 +458,19 @@ const ProfilePreferencesPrivacyPanel = ({ onLoggedOut }: Props) => {
           value={profile.profilePictureUrl}
           onChangeText={(value) => setProfile((prev) => ({ ...prev, profilePictureUrl: value }))}
         />
+        <View style={styles.avatarPreviewWrap}>
+          {profile.profilePictureUrl ? (
+            <Image source={{ uri: profile.profilePictureUrl }} style={styles.avatarPreview} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarPlaceholderText}>{profileInitial}</Text>
+            </View>
+          )}
+          <Text style={styles.helper}>Avatar preview</Text>
+        </View>
+        <View style={styles.inlineActions}>
+          <Button label={busy ? 'Working...' : 'Upload from device'} onPress={uploadProfilePicture} disabled={busy} kind="ghost" />
+        </View>
         <Field label="Bio" value={profile.bio} multiline onChangeText={(value) => setProfile((prev) => ({ ...prev, bio: value }))} />
 
         <Text style={styles.label}>Travel style</Text>
@@ -666,6 +723,35 @@ const styles = StyleSheet.create({
   inputMulti: {
     minHeight: 84,
     textAlignVertical: 'top',
+  },
+  avatarPreviewWrap: {
+    alignItems: 'flex-start',
+  },
+  avatarPreview: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: '#3b3b3b',
+    backgroundColor: '#171717',
+  },
+  avatarPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: '#3b3b3b',
+    backgroundColor: '#1c2638',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarPlaceholderText: {
+    color: '#dbeafe',
+    fontSize: 28,
+    fontWeight: '700',
+  },
+  inlineActions: {
+    flexDirection: 'row',
   },
   chipWrap: {
     flexDirection: 'row',

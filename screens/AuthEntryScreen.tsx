@@ -4,7 +4,8 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View, ImageBackground, K
 import { authApi } from '../services/backend';
 import { GOOGLE_DISCOVERY, getGoogleClientId, getGoogleRedirectUri } from '../services/googleAuth';
 
-type AuthMode = 'login' | 'register' | 'verify';
+type AuthMode = 'login' | 'register' | 'verify' | 'recover';
+type RecoverStage = 'request' | 'confirm';
 
 type Props = {
   onAuthenticated: () => void;
@@ -14,17 +15,31 @@ const TRAVEL_BG = 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?
 
 const AuthEntryScreen = ({ onAuthenticated }: Props) => {
   const [mode, setMode] = useState<AuthMode>('login');
+  const [recoverStage, setRecoverStage] = useState<RecoverStage>('request');
   const [loading, setLoading] = useState(false);
+  const [formMessage, setFormMessage] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const googleClientId = useMemo(() => getGoogleClientId(), []);
   const googleRedirectUri = useMemo(() => getGoogleRedirectUri(), []);
   const googleNonce = useMemo(
     () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     []
   );
+  const emailValue = email.trim().toLowerCase();
+  const passwordValue = password.trim();
+  const usernameValue = username.trim();
+  const otpValue = otp.trim();
+  const newPasswordValue = newPassword.trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isEmailValid = emailRegex.test(emailValue);
+  const isPasswordValid = passwordValue.length >= 6;
+  const isUsernameValid = usernameValue.length >= 2;
+  const isOtpValid = /^\d{6}$/.test(otpValue);
+  const isNewPasswordValid = newPasswordValue.length >= 6;
   const [googleRequest, googleResponse, promptGoogleAsync] = AuthSession.useAuthRequest(
     {
       clientId: googleClientId || 'missing-google-client-id',
@@ -43,9 +58,12 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
   const run = async (fn: () => Promise<void>) => {
     try {
       setLoading(true);
+      setFormMessage('');
       await fn();
     } catch (error: any) {
-      Alert.alert('Error', error?.message || 'Request failed');
+      const message = error?.message || 'Request failed';
+      setFormMessage(message);
+      Alert.alert('Error', message);
     } finally {
       setLoading(false);
     }
@@ -53,12 +71,18 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
 
   const handleLogin = () =>
     run(async () => {
-      if (!email.trim() || !password.trim()) {
-        throw new Error('Please enter email and password');
+      if (!emailValue) {
+        throw new Error('Email is required.');
+      }
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+      if (!passwordValue) {
+        throw new Error('Password is required.');
       }
       await authApi.login({
-        email: email.trim().toLowerCase(),
-        password,
+        email: emailValue,
+        password: passwordValue,
       });
       onAuthenticated();
     });
@@ -105,26 +129,48 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
 
   const handleRegister = () =>
     run(async () => {
-      if (!email.trim() || !password.trim()) {
-        throw new Error('Please enter email and password');
+      if (!emailValue) {
+        throw new Error('Email is required.');
+      }
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+      if (!usernameValue) {
+        throw new Error('Username is required.');
+      }
+      if (!isUsernameValid) {
+        throw new Error('Username must be at least 2 characters.');
+      }
+      if (!passwordValue) {
+        throw new Error('Password is required.');
+      }
+      if (!isPasswordValid) {
+        throw new Error('Password must be at least 6 characters.');
       }
       await authApi.register({
-        username: username.trim() || undefined,
-        email: email.trim().toLowerCase(),
-        password,
+        username: usernameValue || undefined,
+        email: emailValue,
+        password: passwordValue,
       });
       setMode('verify');
+      setRecoverStage('request');
       Alert.alert('Success', 'Registration successful. Please enter OTP sent to your email.');
     });
 
   const handleVerifyOtp = () =>
     run(async () => {
-      if (!email.trim() || !otp.trim()) {
-        throw new Error('Please enter email and OTP');
+      if (!emailValue) {
+        throw new Error('Email is required.');
+      }
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+      if (!isOtpValid) {
+        throw new Error('OTP must be 6 digits.');
       }
       await authApi.verifyOtp({
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        email: emailValue,
+        otp: otpValue,
       });
       Alert.alert('Success', 'Verification successful. You can now login.');
       setMode('login');
@@ -132,11 +178,55 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
 
   const resendOtp = () =>
     run(async () => {
-      if (!email.trim()) {
-        throw new Error('Please enter email to resend OTP');
+      if (!emailValue) {
+        throw new Error('Email is required to resend OTP.');
       }
-      await authApi.resendVerificationOtp(email.trim().toLowerCase());
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+      await authApi.resendVerificationOtp(emailValue);
       Alert.alert('Sent', 'OTP has been resent.');
+    });
+
+  const handleSendRecoveryEmail = () =>
+    run(async () => {
+      if (!emailValue) {
+        throw new Error('Email is required to recover your password.');
+      }
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+
+      await authApi.forgotPassword(emailValue);
+      setRecoverStage('confirm');
+      setFormMessage('Recovery email sent. Check your inbox for the OTP/code, then enter a new password.');
+    });
+
+  const handleResetPassword = () =>
+    run(async () => {
+      if (!emailValue) {
+        throw new Error('Email is required.');
+      }
+      if (!isEmailValid) {
+        throw new Error('Email format is invalid.');
+      }
+      if (!isOtpValid) {
+        throw new Error('OTP must be 6 digits.');
+      }
+      if (!isNewPasswordValid) {
+        throw new Error('New password must be at least 6 characters.');
+      }
+
+      await authApi.resetPassword({
+        email: emailValue,
+        otp: otpValue,
+        newPassword: newPasswordValue,
+      });
+      setMode('login');
+      setRecoverStage('request');
+      setOtp('');
+      setNewPassword('');
+      setFormMessage('Password reset successful. You can sign in now.');
     });
 
   return (
@@ -148,11 +238,17 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
           <Text style={styles.subtitle}>Unlock the world. Sign in to continue.</Text>
 
           <View style={styles.modeRow}>
-            {(['login', 'register', 'verify'] as AuthMode[]).map((item) => (
+            {(['login', 'register', 'verify', 'recover'] as AuthMode[]).map((item) => (
               <Pressable
                 key={item}
                 style={[styles.modeButton, mode === item && styles.modeButtonActive]}
-                onPress={() => setMode(item)}
+                onPress={() => {
+                  setMode(item);
+                  setFormMessage('');
+                  if (item !== 'recover') {
+                    setRecoverStage('request');
+                  }
+                }}
               >
                 <Text style={[styles.modeButtonText, mode === item && styles.modeButtonTextActive]}>
                   {item.toUpperCase()}
@@ -168,18 +264,30 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
             autoCapitalize="none"
             keyboardType="email-address"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(value) => {
+              setFormMessage('');
+              setEmail(value);
+            }}
+            autoComplete="email"
+            textContentType="emailAddress"
           />
+          {!email.trim() || isEmailValid ? null : <Text style={styles.inlineError}>Email format is invalid.</Text>}
 
           {mode === 'register' ? (
-            <TextInput
-              style={styles.input}
-              placeholder="Username (optional)"
-              placeholderTextColor="#a0abc0"
-              autoCapitalize="none"
-              value={username}
-              onChangeText={setUsername}
-            />
+            <View>
+              <TextInput
+                style={styles.input}
+                placeholder="Username"
+                placeholderTextColor="#a0abc0"
+                autoCapitalize="none"
+                value={username}
+                onChangeText={(value) => {
+                  setFormMessage('');
+                  setUsername(value);
+                }}
+              />
+              {!username.trim() || isUsernameValid ? null : <Text style={styles.inlineError}>Username must be at least 2 characters.</Text>}
+            </View>
           ) : null}
 
           {mode === 'verify' ? (
@@ -189,8 +297,58 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
               placeholderTextColor="#a0abc0"
               keyboardType="number-pad"
               value={otp}
-              onChangeText={setOtp}
+              onChangeText={(value) => {
+                setFormMessage('');
+                setOtp(value);
+              }}
+              autoComplete="one-time-code"
             />
+          ) : mode === 'recover' ? (
+            <>
+              <Text style={styles.subtitle}>
+                {recoverStage === 'request'
+                  ? 'Enter your email to receive a recovery code.'
+                  : 'Enter the recovery code and set a new password.'}
+              </Text>
+              {recoverStage === 'confirm' ? (
+                <View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="OTP (6 digits)"
+                    placeholderTextColor="#a0abc0"
+                    keyboardType="number-pad"
+                    value={otp}
+                    onChangeText={(value) => {
+                      setFormMessage('');
+                      setOtp(value);
+                    }}
+                    autoComplete="one-time-code"
+                  />
+                  {!otp.trim() || isOtpValid ? null : <Text style={styles.inlineError}>OTP must be 6 digits.</Text>}
+                </View>
+              ) : null}
+
+              {recoverStage === 'confirm' ? (
+                <View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="New Password"
+                    placeholderTextColor="#a0abc0"
+                    secureTextEntry
+                    value={newPassword}
+                    onChangeText={(value) => {
+                      setFormMessage('');
+                      setNewPassword(value);
+                    }}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
+                  />
+                  {!newPassword.trim() || isNewPasswordValid ? null : (
+                    <Text style={styles.inlineError}>New password must be at least 6 characters.</Text>
+                  )}
+                </View>
+              ) : null}
+            </>
           ) : (
             <TextInput
               style={styles.input}
@@ -198,20 +356,31 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
               placeholderTextColor="#a0abc0"
               secureTextEntry
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(value) => {
+                setFormMessage('');
+                setPassword(value);
+              }}
+              autoComplete="password"
+              textContentType="password"
             />
           )}
 
+          {mode !== 'verify' && mode !== 'recover' && password.trim() && !isPasswordValid ? (
+            <Text style={styles.inlineError}>Password must be at least 6 characters.</Text>
+          ) : null}
+
+          {formMessage ? <Text style={styles.formMessage}>{formMessage}</Text> : null}
+
           {mode === 'login' ? (
-            <Pressable style={[styles.primaryButton, loading && styles.disabled]} disabled={loading} onPress={handleLogin}>
+            <Pressable style={[styles.primaryButton, (!isEmailValid || !password.trim() || loading) && styles.disabled]} disabled={!isEmailValid || !password.trim() || loading} onPress={handleLogin}>
               <Text style={styles.primaryText}>{loading ? 'Authenticating...' : 'Sign In'}</Text>
             </Pressable>
           ) : null}
 
           {mode === 'register' ? (
             <Pressable
-              style={[styles.primaryButton, loading && styles.disabled]}
-              disabled={loading}
+              style={[styles.primaryButton, (!isEmailValid || !isUsernameValid || !isPasswordValid || loading) && styles.disabled]}
+              disabled={!isEmailValid || !isUsernameValid || !isPasswordValid || loading}
               onPress={handleRegister}
             >
               <Text style={styles.primaryText}>{loading ? 'Registering...' : 'Create Account'}</Text>
@@ -221,8 +390,8 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
           {mode === 'verify' ? (
             <>
               <Pressable
-                style={[styles.primaryButton, loading && styles.disabled]}
-                disabled={loading}
+                style={[styles.primaryButton, (!isEmailValid || !isOtpValid || loading) && styles.disabled]}
+                disabled={!isEmailValid || !isOtpValid || loading}
                 onPress={handleVerifyOtp}
               >
                 <Text style={styles.primaryText}>{loading ? 'Verifying...' : 'Verify OTP'}</Text>
@@ -233,7 +402,33 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
             </>
           ) : null}
 
-          {mode !== 'verify' ? (
+          {mode === 'recover' ? (
+            <>
+              {recoverStage === 'request' ? (
+                <Pressable
+                  style={[styles.primaryButton, (!isEmailValid || loading) && styles.disabled]}
+                  disabled={!isEmailValid || loading}
+                  onPress={handleSendRecoveryEmail}
+                >
+                  <Text style={styles.primaryText}>{loading ? 'Sending...' : 'Send Recovery Email'}</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={[styles.primaryButton, (!isEmailValid || !isOtpValid || !isNewPasswordValid || loading) && styles.disabled]}
+                  disabled={!isEmailValid || !isOtpValid || !isNewPasswordValid || loading}
+                  onPress={handleResetPassword}
+                >
+                  <Text style={styles.primaryText}>{loading ? 'Resetting...' : 'Reset Password'}</Text>
+                </Pressable>
+              )}
+
+              <Pressable style={[styles.ghostButton, loading && styles.disabled]} disabled={loading} onPress={() => setMode('login')}>
+                <Text style={styles.ghostText}>Back to Login</Text>
+              </Pressable>
+            </>
+          ) : null}
+
+          {mode !== 'verify' && mode !== 'recover' ? (
             <>
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
@@ -248,6 +443,16 @@ const AuthEntryScreen = ({ onAuthenticated }: Props) => {
                 <Text style={styles.googleButtonText}>Continue with Google</Text>
               </Pressable>
             </>
+          ) : null}
+
+          {mode === 'login' ? (
+            <Pressable onPress={() => {
+              setMode('recover');
+              setRecoverStage('request');
+              setFormMessage('');
+            }}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </Pressable>
           ) : null}
         </View>
       </KeyboardAvoidingView>
@@ -331,6 +536,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
   },
+  inlineError: {
+    color: '#fca5a5',
+    fontSize: 12,
+    marginTop: 6,
+    marginLeft: 2,
+  },
+  formMessage: {
+    color: '#bfdbfe',
+    fontSize: 13,
+    lineHeight: 18,
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+    borderColor: 'rgba(59, 130, 246, 0.28)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   primaryButton: {
     borderRadius: 14,
     backgroundColor: '#00f2fe',
@@ -393,6 +615,13 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.6,
+  },
+  forgotText: {
+    color: '#cbd5e1',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
   },
 });
 

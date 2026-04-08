@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ImageBackground } from 'react-native';
 import { CalendarDays, Flame, Landmark, MapPin, Mountain, ShoppingBag, Trees, UtensilsCrossed } from 'lucide-react-native';
 import { LocationDiscovery, LocationRoute, LocationSnapshot, NearbyPlace, locationApi } from '../services/backend';
+import {
+  cacheLocationSnapshot,
+  isLikelyOfflineError,
+  loadLocationSnapshot,
+} from '../services/offlineSync';
 
 type PermissionState = 'unknown' | 'granted' | 'denied' | 'unavailable';
 
@@ -30,7 +35,13 @@ const canRenderNativeMap =
   !!MapViewComponent &&
   (typeof MapViewComponent === 'function' ||
     (typeof MapViewComponent === 'object' && MapViewComponent !== null && '$$typeof' in MapViewComponent));
+const hasGoogleMapsApiKey =
+  Platform.OS === 'web' ||
+  !!process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  !!process.env.GOOGLE_MAPS_API_KEY;
 const IframeElement: any = 'iframe';
+const webNavigator: any = typeof navigator !== 'undefined' ? navigator : null;
+const browserGeolocationAvailable = Platform.OS === 'web' && !!webNavigator?.geolocation;
 
 const MAX_RADIUS = 50;
 const MIN_RADIUS = 1;
@@ -109,6 +120,47 @@ const getCategoryFallbackImage = (category: string, type: string) => {
   return 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&q=80&w=400';
 };
 
+const getBrowserCurrentPosition = () =>
+  new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+    if (!browserGeolocationAvailable || !webNavigator?.geolocation) {
+      reject(new Error('Browser geolocation is unavailable in this web browser.'));
+      return;
+    }
+
+    webNavigator.geolocation.getCurrentPosition(
+      (position: any) => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      (error: any) => {
+        reject(new Error(error?.message || 'Browser location request was denied.'));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+
+const watchBrowserPosition = (onUpdate: (latitude: number, longitude: number) => void) => {
+  if (!browserGeolocationAvailable || !webNavigator?.geolocation) {
+    throw new Error('Browser geolocation is unavailable in this web browser.');
+  }
+
+  const watchId = webNavigator.geolocation.watchPosition(
+    (position: any) => {
+      onUpdate(position.coords.latitude, position.coords.longitude);
+    },
+    (error: any) => {
+      console.warn('Browser location watch error:', error?.message || error);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+  );
+
+  return {
+    remove: () => webNavigator.geolocation.clearWatch(watchId),
+  };
+};
+
 const LocationDiscoveryPanel = () => {
   const watchRef = useRef<any>(null);
   const lastSyncAtRef = useRef<number>(0);
@@ -119,6 +171,7 @@ const LocationDiscoveryPanel = () => {
   const [currentLocation, setCurrentLocation] = useState<LocationSnapshot | null>(null);
   const [discovery, setDiscovery] = useState<LocationDiscovery | null>(null);
   const [route, setRoute] = useState<LocationRoute | null>(null);
+  const [usingOfflineData, setUsingOfflineData] = useState(false);
 
   const [manualLat, setManualLat] = useState('');
   const [manualLon, setManualLon] = useState('');
@@ -158,6 +211,15 @@ const LocationDiscoveryPanel = () => {
   };
 
   const requestPermission = async () => {
+    if (Platform.OS === 'web') {
+      if (!browserGeolocationAvailable) {
+        setPermission('unavailable');
+        throw new Error('Browser geolocation is unavailable in this web browser.');
+      }
+      setPermission('granted');
+      return true;
+    }
+
     if (!ExpoLocationModule) {
       setPermission('unavailable');
       throw new Error('expo-location is not installed. Add it to enable device GPS tracking.');
@@ -185,12 +247,28 @@ const LocationDiscoveryPanel = () => {
 
   const refreshDiscovery = async (latitude?: number, longitude?: number) => {
     const parsedRadius = clampRadius(Number(radiusKm) || DEFAULT_RADIUS);
-    const payload = await locationApi.discoverNearby({
-      latitude,
-      longitude,
-      radiusKm: parsedRadius,
-    });
-    setDiscovery(payload);
+    try {
+      const payload = await locationApi.discoverNearby({
+        latitude,
+        longitude,
+        radiusKm: parsedRadius,
+      });
+      setDiscovery(payload);
+      setUsingOfflineData(false);
+      return payload;
+    } catch (error) {
+      const cached = await loadLocationSnapshot();
+      if (cached?.discovery) {
+        setDiscovery(cached.discovery);
+        setUsingOfflineData(true);
+        return cached.discovery;
+      }
+      if (!isLikelyOfflineError(error)) {
+        throw error;
+      }
+      setUsingOfflineData(true);
+      return null;
+    }
   };
 
   const syncRealtimeLocation = async (latitude: number, longitude: number, locationName?: string) => {
@@ -200,18 +278,36 @@ const LocationDiscoveryPanel = () => {
     }
     lastSyncAtRef.current = now;
 
-    const updated = await locationApi.updateRealtimeLocation({
-      latitude: toFixed2(latitude),
-      longitude: toFixed2(longitude),
-      locationName,
-    });
-    setCurrentLocation(updated);
-    await refreshDiscovery(updated.latitude, updated.longitude);
+    try {
+      const updated = await locationApi.updateRealtimeLocation({
+        latitude: toFixed2(latitude),
+        longitude: toFixed2(longitude),
+        locationName,
+      });
+      setCurrentLocation(updated);
+      const payload = await refreshDiscovery(updated.latitude, updated.longitude);
+      await cacheLocationSnapshot({ currentLocation: updated, discovery: payload || discovery });
+      setUsingOfflineData(false);
+    } catch (error) {
+      const cached = await loadLocationSnapshot();
+      if (cached) {
+        setCurrentLocation(cached.currentLocation);
+        setDiscovery(cached.discovery);
+        setUsingOfflineData(true);
+        return;
+      }
+      throw error;
+    }
   };
 
   const syncDeviceLocationOnce = () =>
     run(async () => {
       await requestPermission();
+      if (Platform.OS === 'web' && !ExpoLocationModule) {
+        const position = await getBrowserCurrentPosition();
+        await syncRealtimeLocation(position.latitude, position.longitude, 'Browser GPS');
+        return;
+      }
       const position = await ExpoLocationModule.getCurrentPositionAsync({
         accuracy: ExpoLocationModule.Accuracy?.Balanced || 3,
       });
@@ -230,6 +326,19 @@ const LocationDiscoveryPanel = () => {
       }
 
       await requestPermission();
+      if (Platform.OS === 'web' && !ExpoLocationModule) {
+        const subscription = watchBrowserPosition(async (latitude, longitude) => {
+          try {
+            await syncRealtimeLocation(latitude, longitude, 'Browser realtime GPS');
+          } catch {
+            // keep tracking alive during temporary failures
+          }
+        });
+        watchRef.current = subscription;
+        setTracking(true);
+        return;
+      }
+
       const subscription = await ExpoLocationModule.watchPositionAsync(
         {
           accuracy: ExpoLocationModule.Accuracy?.Balanced || 3,
@@ -263,13 +372,30 @@ const LocationDiscoveryPanel = () => {
         throw new Error('Latitude/longitude out of range.');
       }
 
-      const updated = await locationApi.updateManualLocation({
-        latitude: toFixed2(lat),
-        longitude: toFixed2(lon),
-        locationName: manualName.trim() || 'Manual planning point',
-      });
-      setCurrentLocation(updated);
-      await refreshDiscovery(updated.latitude, updated.longitude);
+      try {
+        const updated = await locationApi.updateManualLocation({
+          latitude: toFixed2(lat),
+          longitude: toFixed2(lon),
+          locationName: manualName.trim() || 'Manual planning point',
+        });
+        setCurrentLocation(updated);
+        const payload = await refreshDiscovery(updated.latitude, updated.longitude);
+        await cacheLocationSnapshot({ currentLocation: updated, discovery: payload || discovery });
+        setUsingOfflineData(false);
+      } catch (error) {
+        const cached = await loadLocationSnapshot();
+        if (cached) {
+          setCurrentLocation(cached.currentLocation);
+          setDiscovery(cached.discovery);
+          setUsingOfflineData(true);
+          return;
+        }
+        if (isLikelyOfflineError(error)) {
+          setUsingOfflineData(true);
+          return;
+        }
+        throw error;
+      }
     });
 
   const loadCurrentFromBackend = () =>
@@ -277,11 +403,30 @@ const LocationDiscoveryPanel = () => {
       try {
         const current = await locationApi.getCurrentLocation();
         setCurrentLocation(current);
-        await refreshDiscovery(current.latitude, current.longitude);
+        const payload = await refreshDiscovery(current.latitude, current.longitude);
+        await cacheLocationSnapshot({ currentLocation: current, discovery: payload || discovery });
+        setUsingOfflineData(false);
       } catch (error: any) {
         if (error?.message?.toLowerCase().includes('no current location')) {
+          if (browserGeolocationAvailable) {
+            try {
+              const position = await getBrowserCurrentPosition();
+              setPermission('granted');
+              await syncRealtimeLocation(position.latitude, position.longitude, 'Browser GPS');
+              return;
+            } catch {
+              // fall through to empty state when browser permission is denied
+            }
+          }
           setCurrentLocation(null);
           setDiscovery(null);
+          return;
+        }
+        const cached = await loadLocationSnapshot();
+        if (cached) {
+          setCurrentLocation(cached.currentLocation);
+          setDiscovery(cached.discovery);
+          setUsingOfflineData(true);
           return;
         }
         throw error;
@@ -290,7 +435,25 @@ const LocationDiscoveryPanel = () => {
 
   const refreshUsingCurrent = () =>
     run(async () => {
-      await refreshDiscovery(reference?.latitude, reference?.longitude);
+      try {
+        const payload = await refreshDiscovery(reference?.latitude, reference?.longitude);
+        if (reference) {
+          await cacheLocationSnapshot({ currentLocation: reference, discovery: payload || discovery });
+        }
+      } catch (error) {
+        const cached = await loadLocationSnapshot();
+        if (cached) {
+          setCurrentLocation(cached.currentLocation);
+          setDiscovery(cached.discovery);
+          setUsingOfflineData(true);
+          return;
+        }
+        if (isLikelyOfflineError(error)) {
+          setUsingOfflineData(true);
+          return;
+        }
+        throw error;
+      }
     });
 
   const buildRoute = (place: NearbyPlace) =>
@@ -316,9 +479,25 @@ const LocationDiscoveryPanel = () => {
 
   useEffect(() => {
     if (!ExpoLocationModule) {
-      setPermission('unavailable');
+      setPermission(browserGeolocationAvailable ? 'unknown' : 'unavailable');
     }
-    void loadCurrentFromBackend();
+    void (async () => {
+      const cached = await loadLocationSnapshot();
+      if (cached?.currentLocation) {
+        setCurrentLocation(cached.currentLocation);
+        setDiscovery(cached.discovery);
+        setUsingOfflineData(true);
+      }
+      // Always try loading fresh data from backend, even if we have cache
+      await loadCurrentFromBackend().catch(() => {
+        // On web without GPS permission or if backend fails, try to use browser geolocation as fallback
+        if (Platform.OS === 'web' && browserGeolocationAvailable && !currentLocation) {
+          requestPermission()
+            .then(syncDeviceLocationOnce)
+            .catch((err) => console.warn('Web fallback GPS failed:', err));
+        }
+      });
+    })();
     return () => {
       stopTracking();
     };
@@ -326,11 +505,24 @@ const LocationDiscoveryPanel = () => {
 
   return (
     <View style={styles.wrapper}>
+      {usingOfflineData && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            Offline mode: showing the last cached nearby attractions and events.
+          </Text>
+        </View>
+      )}
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>GPS Integration</Text>
         <Text style={styles.helper}>
           Permission: {permission.toUpperCase()} • Tracking: {tracking ? 'ON' : 'OFF'}
         </Text>
+        {Platform.OS === 'web' && (
+          <Text style={styles.helper}>
+            Web fallback is enabled. Your browser location is used when Expo GPS is unavailable.
+          </Text>
+        )}
         <View style={styles.buttonRow}>
           <Button
             label={loading ? 'Working...' : tracking ? 'Stop realtime tracking' : 'Start realtime tracking'}
@@ -382,7 +574,7 @@ const LocationDiscoveryPanel = () => {
             </Text>
           </View>
         ) : null}
-        {Platform.OS !== 'web' && canRenderNativeMap ? (
+        {Platform.OS !== 'web' && canRenderNativeMap && hasGoogleMapsApiKey ? (
           <MapViewComponent
             key={`${nativeCenterLat}-${nativeCenterLon}`}
             style={styles.map}
@@ -419,7 +611,9 @@ const LocationDiscoveryPanel = () => {
               Google/Mapbox deep-link integration is active.
               {Platform.OS === ('web' as string)
                 ? ' react-native-maps does not render in Expo Web runtime.'
-                : ' If map package version is mismatched with Expo SDK, run: npx expo install react-native-maps. Expo Go: restart with npx expo start -c. Dev build: rebuild with npx expo run:android (or ios).'}
+                : hasGoogleMapsApiKey
+                  ? ' If map package version is mismatched with Expo SDK, run: npx expo install react-native-maps. Expo Go: restart with npx expo start -c. Dev build: rebuild with npx expo run:android (or ios).'
+                  : ' Missing Google Maps API key. Set EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env and rebuild development build.'}
             </Text>
             {compactMapError ? <Text style={styles.helper}>Map module error: {compactMapError}</Text> : null}
             {reference ? (
@@ -584,6 +778,20 @@ const styles = StyleSheet.create({
   wrapper: {
     gap: 16,
     paddingBottom: 24,
+  },
+  offlineBanner: {
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  offlineBannerText: {
+    color: '#fde68a',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
   },
   card: {
     backgroundColor: 'rgba(17, 24, 39, 0.7)',
