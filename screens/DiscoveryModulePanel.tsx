@@ -35,8 +35,10 @@ import {
   DiscoveryDetailResponse,
   DiscoveryItem,
   DiscoverySortBy,
+  Interest,
   discoveryApi,
   locationApi,
+  userApi,
 } from '../services/backend';
 import {
   cacheDiscoverySnapshot,
@@ -165,6 +167,43 @@ const buildDetailGallery = (item: DiscoveryItem, imageUrls: string[] = []) => {
   return unique.slice(0, 6);
 };
 
+const INTEREST_LABELS: Record<Interest, string> = {
+  FOOD: 'Food',
+  CULTURE: 'Culture',
+  SHOPPING: 'Shopping',
+  NATURE: 'Nature',
+  ADVENTURE: 'Adventure',
+};
+
+const INTEREST_TO_CATEGORY: Record<Interest, DiscoveryCategory[]> = {
+  FOOD: ['CUISINE'],
+  CULTURE: ['ATTRACTION', 'ACTIVITY'],
+  SHOPPING: ['ACTIVITY'],
+  NATURE: ['ATTRACTION', 'ACTIVITY'],
+  ADVENTURE: ['ACTIVITY', 'ATTRACTION'],
+};
+
+const inferSeason = (month: number) => {
+  if (month >= 2 && month <= 4) return 'Spring';
+  if (month >= 5 && month <= 7) return 'Summer';
+  if (month >= 8 && month <= 10) return 'Autumn';
+  return 'Winter';
+};
+
+const inferWeatherHint = (hour: number) => {
+  if (hour >= 6 && hour < 11) return 'Sunny';
+  if (hour >= 11 && hour < 17) return 'Cloudy';
+  if (hour >= 17 && hour < 22) return 'Rainy';
+  return 'Cool night';
+};
+
+const inferTimeBucket = (hour: number) => {
+  if (hour >= 5 && hour < 11) return 'Morning';
+  if (hour >= 11 && hour < 17) return 'Afternoon';
+  if (hour >= 17 && hour < 22) return 'Evening';
+  return 'Late night';
+};
+
 /* ════════════════════════════════════════════════════════════════════════════ */
 /*  DiscoveryModulePanel                                                      */
 /* ════════════════════════════════════════════════════════════════════════════ */
@@ -214,11 +253,127 @@ const DiscoveryModulePanel = () => {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [usingOfflineData, setUsingOfflineData] = useState(false);
   const [cacheReady, setCacheReady] = useState(false);
+  const [userInterests, setUserInterests] = useState<Interest[]>([]);
+  const [serverPersonalization, setServerPersonalization] = useState<{
+    timeBucket?: string;
+    weather?: string;
+    season?: string;
+    reasons?: string[];
+    interests?: Interest[];
+  }>({});
 
   const distanceValue = useMemo(() => {
     const parsed = Number(maxDistanceKm.trim());
     return Number.isFinite(parsed) ? Math.max(1, Math.min(parsed, 300)) : 30;
   }, [maxDistanceKm]);
+
+  const localPersonalizationContext = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const month = now.getMonth() + 1;
+    return {
+      timeBucket: inferTimeBucket(hour),
+      season: inferSeason(month),
+      weather: inferWeatherHint(hour),
+    };
+  }, []);
+
+  const personalizationContext = useMemo(
+    () => ({
+      timeBucket: serverPersonalization.timeBucket || localPersonalizationContext.timeBucket,
+      weather: serverPersonalization.weather || localPersonalizationContext.weather,
+      season: serverPersonalization.season || localPersonalizationContext.season,
+    }),
+    [serverPersonalization, localPersonalizationContext]
+  );
+
+  const effectiveInterests = useMemo(() => {
+    return serverPersonalization.interests && serverPersonalization.interests.length > 0
+      ? serverPersonalization.interests
+      : userInterests;
+  }, [serverPersonalization.interests, userInterests]);
+
+  const activityCategoryBoost = useMemo(() => {
+    const boosts: Record<DiscoveryCategory, number> = {
+      ALL: 0,
+      ATTRACTION: 0,
+      CUISINE: 0,
+      ACTIVITY: 0,
+    };
+
+    bookmarks.forEach((item) => {
+      boosts[item.category] += 0.8;
+    });
+
+    recentSearches.forEach((entry) => {
+      const value = entry.toLowerCase();
+      if (value.includes('food') || value.includes('cafe') || value.includes('restaurant')) {
+        boosts.CUISINE += 0.6;
+      }
+      if (value.includes('museum') || value.includes('landmark') || value.includes('viewpoint')) {
+        boosts.ATTRACTION += 0.6;
+      }
+      if (value.includes('tour') || value.includes('activity') || value.includes('sport')) {
+        boosts.ACTIVITY += 0.6;
+      }
+    });
+
+    return boosts;
+  }, [bookmarks, recentSearches]);
+
+  const personalizedItems = useMemo(() => {
+    const preferredCategories = new Set<DiscoveryCategory>();
+    effectiveInterests.forEach((interest) => {
+      INTEREST_TO_CATEGORY[interest].forEach((cat) => preferredCategories.add(cat));
+    });
+
+    const weatherBoostByCategory: Partial<Record<DiscoveryCategory, number>> =
+      personalizationContext.weather === 'Rainy'
+        ? { CUISINE: 0.9, ATTRACTION: 0.4, ACTIVITY: 0.2 }
+        : personalizationContext.weather === 'Sunny'
+          ? { ACTIVITY: 0.9, ATTRACTION: 0.6, CUISINE: 0.2 }
+          : { ATTRACTION: 0.4, CUISINE: 0.4, ACTIVITY: 0.4 };
+
+    const timeBoostByCategory: Partial<Record<DiscoveryCategory, number>> =
+      personalizationContext.timeBucket === 'Morning'
+        ? { CUISINE: 0.4, ATTRACTION: 0.6 }
+        : personalizationContext.timeBucket === 'Evening'
+          ? { CUISINE: 0.8, ACTIVITY: 0.6 }
+          : { ATTRACTION: 0.5, ACTIVITY: 0.5 };
+
+    return [...items]
+      .map((item) => {
+        const interestBoost = preferredCategories.has(item.category) ? 1.2 : 0;
+        const historyBoost = activityCategoryBoost[item.category] ?? 0;
+        const weatherBoost = weatherBoostByCategory[item.category] ?? 0;
+        const timeBoost = timeBoostByCategory[item.category] ?? 0;
+        const score =
+          item.rating * 1.8 +
+          (item.popularityScore / 100) * 1.2 +
+          interestBoost +
+          historyBoost +
+          weatherBoost +
+          timeBoost;
+        return { ...item, __personalScore: score };
+      })
+      .sort((a, b) => b.__personalScore - a.__personalScore)
+      .map(({ __personalScore, ...item }) => item as DiscoveryItem);
+  }, [items, effectiveInterests, activityCategoryBoost, personalizationContext]);
+
+  const personalizationTopReasons = useMemo(() => {
+    if (serverPersonalization.reasons && serverPersonalization.reasons.length > 0) {
+      return serverPersonalization.reasons.slice(0, 4);
+    }
+    const reasons: string[] = [];
+    if (effectiveInterests.length > 0) {
+      reasons.push(`Interests: ${effectiveInterests.slice(0, 3).map((it) => INTEREST_LABELS[it]).join(', ')}`);
+    }
+    if (bookmarks.length > 0) {
+      reasons.push(`Activity history: ${bookmarks.length} saved places`);
+    }
+    reasons.push(`Context: ${personalizationContext.timeBucket} • ${personalizationContext.weather} • ${personalizationContext.season}`);
+    return reasons.slice(0, 3);
+  }, [serverPersonalization.reasons, effectiveInterests, bookmarks.length, personalizationContext]);
 
   /* ── helpers ── */
   const run = async (task: () => Promise<void>) => {
@@ -231,6 +386,21 @@ const DiscoveryModulePanel = () => {
       setLoading(false);
     }
   };
+
+  const withTimeout = useCallback(
+    async <T,>(promise: Promise<T>, timeoutMs = 20000): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Request timed out.')), timeoutMs);
+        });
+        return await Promise.race([promise, timeoutPromise]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    },
+    []
+  );
 
   const confirmRemoveFromSaved = async (placeName: string) => {
     const message = `Remove "${placeName}" from your saved places?`;
@@ -247,12 +417,18 @@ const DiscoveryModulePanel = () => {
     });
   };
 
+  const removeSyntheticLocalItems = useCallback(
+    (list: DiscoveryItem[] = []) => list.filter((item) => !(item?.id || '').startsWith('local:')),
+    []
+  );
+
   /* ── data loaders ── */
   const loadBrowse = useCallback(
     async (cat?: DiscoveryCategory, searchQuery?: string, pageNum = 0) => {
+      const requestedQuery = (searchQuery ?? query).trim();
       try {
-        const payload = await discoveryApi.browse({
-          query: (searchQuery ?? query).trim() || undefined,
+        const payload = await withTimeout(discoveryApi.browse({
+          query: requestedQuery || undefined,
           category: cat ?? activeCategory,
           minRating,
           maxPriceLevel,
@@ -263,27 +439,43 @@ const DiscoveryModulePanel = () => {
           longitude: refLocation.longitude,
           limit: 24,
           page: pageNum,
-        });
+        }));
         if (pageNum === 0) {
           setItems(payload.items || []);
         } else {
           setItems((prev) => [...prev, ...(payload.items || [])]);
         }
         setSuggestions(payload.autocompleteSuggestions || []);
+        setServerPersonalization({
+          timeBucket: payload.personalizationTimeBucket,
+          weather: payload.personalizationWeather,
+          season: payload.personalizationSeason,
+          reasons: payload.personalizationReasons || [],
+          interests: (payload.personalizationInterests || [])
+            .map((value) => value.toUpperCase())
+            .filter((value): value is Interest =>
+              ['FOOD', 'CULTURE', 'SHOPPING', 'NATURE', 'ADVENTURE'].includes(value)
+            ),
+        });
         setPage(payload.page ?? pageNum);
         setHasNext(payload.hasNext ?? false);
         setTotalItems(payload.totalItems ?? payload.items?.length ?? 0);
         setUsingOfflineData(false);
       } catch (error: unknown) {
         const cached = await loadDiscoverySnapshot();
-        if (cached && pageNum === 0) {
-          setItems(cached.lastBrowseItems || []);
+        if (cached && pageNum === 0 && !requestedQuery) {
+          setItems(removeSyntheticLocalItems(cached.lastBrowseItems || []));
           setSuggestions(cached.lastSuggestions || []);
           setPage(0);
           setHasNext(false);
-          setTotalItems((cached.lastBrowseItems || []).length);
+          setTotalItems(removeSyntheticLocalItems(cached.lastBrowseItems || []).length);
           setUsingOfflineData(true);
           return;
+        }
+        if (pageNum === 0 && requestedQuery) {
+          setItems([]);
+          setHasNext(false);
+          setTotalItems(0);
         }
         if (isLikelyOfflineError(error)) {
           setUsingOfflineData(true);
@@ -292,7 +484,7 @@ const DiscoveryModulePanel = () => {
         throw error;
       }
     },
-    [query, activeCategory, minRating, maxPriceLevel, minPopularity, distanceValue, sortBy, refLocation]
+    [query, activeCategory, minRating, maxPriceLevel, minPopularity, distanceValue, sortBy, refLocation, withTimeout, removeSyntheticLocalItems]
   );
 
   const loadMore = useCallback(async () => {
@@ -311,42 +503,66 @@ const DiscoveryModulePanel = () => {
     setLoadingFeatured(true);
     try {
       const [attractions, cuisines, activities] = await Promise.all([
-        discoveryApi.browse({
+        withTimeout(discoveryApi.browse({
           category: 'ATTRACTION',
           sort: 'TOP_RATED',
           latitude: refLocation.latitude,
           longitude: refLocation.longitude,
           limit: 8,
-        }),
-        discoveryApi.browse({
+        })),
+        withTimeout(discoveryApi.browse({
           category: 'CUISINE',
           sort: 'TOP_RATED',
           latitude: refLocation.latitude,
           longitude: refLocation.longitude,
           limit: 8,
-        }),
-        discoveryApi.browse({
+        })),
+        withTimeout(discoveryApi.browse({
           category: 'ACTIVITY',
           sort: 'TOP_RATED',
           latitude: refLocation.latitude,
           longitude: refLocation.longitude,
           limit: 8,
-        }),
+        })),
       ]);
-      setFeaturedAttractions(attractions.items || []);
-      setFeaturedCuisines(cuisines.items || []);
-      setFeaturedActivities(activities.items || []);
+
+      const attractionItems = attractions.items || [];
+      const cuisineItems = cuisines.items || [];
+      const activityItems = activities.items || [];
+
+      if (attractionItems.length === 0 && cuisineItems.length === 0 && activityItems.length === 0) {
+        const allTopRated = await withTimeout(discoveryApi.browse({
+          category: 'ALL',
+          sort: 'TOP_RATED',
+          latitude: refLocation.latitude,
+          longitude: refLocation.longitude,
+          limit: 24,
+        }));
+
+        const source = allTopRated.items || [];
+        setFeaturedAttractions(source.filter((item) => item.category === 'ATTRACTION').slice(0, 8));
+        setFeaturedCuisines(source.filter((item) => item.category === 'CUISINE').slice(0, 8));
+        setFeaturedActivities(source.filter((item) => item.category === 'ACTIVITY').slice(0, 8));
+      } else {
+        setFeaturedAttractions(attractionItems);
+        setFeaturedCuisines(cuisineItems);
+        setFeaturedActivities(activityItems);
+      }
+
       setUsingOfflineData(false);
     } catch (error: unknown) {
       const cached = await loadDiscoverySnapshot();
       if (cached) {
-        setFeaturedAttractions(cached.featuredAttractions || []);
-        setFeaturedCuisines(cached.featuredCuisines || []);
-        setFeaturedActivities(cached.featuredActivities || []);
+        const cachedAttractions = removeSyntheticLocalItems(cached.featuredAttractions || []);
+        const cachedCuisines = removeSyntheticLocalItems(cached.featuredCuisines || []);
+        const cachedActivities = removeSyntheticLocalItems(cached.featuredActivities || []);
+        setFeaturedAttractions(cachedAttractions);
+        setFeaturedCuisines(cachedCuisines);
+        setFeaturedActivities(cachedActivities);
         if (
-          (cached.featuredAttractions || []).length > 0 ||
-          (cached.featuredCuisines || []).length > 0 ||
-          (cached.featuredActivities || []).length > 0
+          cachedAttractions.length > 0 ||
+          cachedCuisines.length > 0 ||
+          cachedActivities.length > 0
         ) {
           setUsingOfflineData(true);
           return;
@@ -358,21 +574,24 @@ const DiscoveryModulePanel = () => {
     } finally {
       setLoadingFeatured(false);
     }
-  }, [refLocation]);
+  }, [refLocation, withTimeout, removeSyntheticLocalItems]);
 
   const loadBookmarks = useCallback(async () => {
     try {
-      const payload = await discoveryApi.getBookmarks({
-        latitude: refLocation.latitude,
-        longitude: refLocation.longitude,
-      });
-      setBookmarks(payload || []);
+      const payload = await withTimeout(
+        discoveryApi.getBookmarks({
+          latitude: refLocation.latitude,
+          longitude: refLocation.longitude,
+        })
+      );
+      setBookmarks(removeSyntheticLocalItems(payload || []));
       setUsingOfflineData(false);
     } catch (error: unknown) {
       const cached = await loadDiscoverySnapshot();
       if (cached) {
-        setBookmarks(cached.bookmarks || []);
-        if ((cached.bookmarks || []).length > 0) {
+        const cachedBookmarks = removeSyntheticLocalItems(cached.bookmarks || []);
+        setBookmarks(cachedBookmarks);
+        if (cachedBookmarks.length > 0) {
           setUsingOfflineData(true);
           return;
         }
@@ -383,7 +602,7 @@ const DiscoveryModulePanel = () => {
       }
       throw error;
     }
-  }, [refLocation]);
+  }, [refLocation, withTimeout, removeSyntheticLocalItems]);
 
   const refreshAll = () =>
     run(async () => {
@@ -392,7 +611,13 @@ const DiscoveryModulePanel = () => {
         const latestRecent = await recordRecentSearch('discovery', trimmed);
         setRecentSearches(latestRecent);
       }
-      await Promise.all([loadBrowse(), loadBookmarks()]);
+      const [browseResult, bookmarkResult] = await Promise.allSettled([loadBrowse(), loadBookmarks()]);
+      if (browseResult.status === 'rejected') {
+        throw browseResult.reason;
+      }
+      if (bookmarkResult.status === 'rejected') {
+        console.warn('Bookmark refresh failed:', bookmarkResult.reason);
+      }
     });
 
   /* ── bookmark toggle ── */
@@ -542,18 +767,23 @@ const DiscoveryModulePanel = () => {
         loadRecentSearches('discovery'),
       ]);
       if (cachedDiscovery) {
-        setBookmarks(cachedDiscovery.bookmarks || []);
-        setFeaturedAttractions(cachedDiscovery.featuredAttractions || []);
-        setFeaturedCuisines(cachedDiscovery.featuredCuisines || []);
-        setFeaturedActivities(cachedDiscovery.featuredActivities || []);
-        setItems(cachedDiscovery.lastBrowseItems || []);
+        const cachedBookmarks = removeSyntheticLocalItems(cachedDiscovery.bookmarks || []);
+        const cachedAttractions = removeSyntheticLocalItems(cachedDiscovery.featuredAttractions || []);
+        const cachedCuisines = removeSyntheticLocalItems(cachedDiscovery.featuredCuisines || []);
+        const cachedActivities = removeSyntheticLocalItems(cachedDiscovery.featuredActivities || []);
+        const cachedItems = removeSyntheticLocalItems(cachedDiscovery.lastBrowseItems || []);
+        setBookmarks(cachedBookmarks);
+        setFeaturedAttractions(cachedAttractions);
+        setFeaturedCuisines(cachedCuisines);
+        setFeaturedActivities(cachedActivities);
+        setItems(cachedItems);
         setSuggestions(cachedDiscovery.lastSuggestions || []);
         if (
-          (cachedDiscovery.bookmarks || []).length > 0 ||
-          (cachedDiscovery.lastBrowseItems || []).length > 0 ||
-          (cachedDiscovery.featuredAttractions || []).length > 0 ||
-          (cachedDiscovery.featuredCuisines || []).length > 0 ||
-          (cachedDiscovery.featuredActivities || []).length > 0
+          cachedBookmarks.length > 0 ||
+          cachedItems.length > 0 ||
+          cachedAttractions.length > 0 ||
+          cachedCuisines.length > 0 ||
+          cachedActivities.length > 0
         ) {
           setUsingOfflineData(true);
         }
@@ -570,8 +800,18 @@ const DiscoveryModulePanel = () => {
         setRefLocation({});
       }
     })();
+
+    (async () => {
+      try {
+        const profile = await userApi.getProfile();
+        setUserInterests((profile?.interests || []).slice(0, 5));
+      } catch {
+        // fallback for demo UI
+        setUserInterests(['CULTURE', 'FOOD']);
+      }
+    })();
     return unsubscribe;
-  }, []);
+  }, [removeSyntheticLocalItems]);
 
   useEffect(() => {
     if (!cacheReady) return;
@@ -636,6 +876,7 @@ const DiscoveryModulePanel = () => {
     [detailItem, detail?.imageUrls]
   );
   const isAllCategory = activeCategory === 'ALL';
+  const displayItems = personalizedItems;
 
   /* ════════════════ RENDER ════════════════ */
   return (
@@ -750,6 +991,31 @@ const DiscoveryModulePanel = () => {
         <View style={styles.categoryHeader}>
           <Text style={styles.categoryTitle}>{getCategoryMeta(activeCategory).emoji} {getCategoryMeta(activeCategory).label}</Text>
           <Text style={styles.categoryDesc}>{getCategoryMeta(activeCategory).description}</Text>
+        </View>
+      )}
+
+      {/* ─── Smart matching insight ─── */}
+      {activeView === 'browse' && (
+        <View style={styles.personalizeCard}>
+          <View style={styles.personalizeHeaderRow}>
+            <Text style={styles.personalizeTitle}>🧠 Smart Matching</Text>
+          </View>
+          <View style={styles.personalizeChipRow}>
+            <Text style={styles.personalizeChip}>⏰ {personalizationContext.timeBucket}</Text>
+            <Text style={styles.personalizeChip}>⛅ {personalizationContext.weather}</Text>
+            <Text style={styles.personalizeChip}>🍂 {personalizationContext.season}</Text>
+            {effectiveInterests.slice(0, 2).map((interest) => (
+              <Text key={interest} style={styles.personalizeChip}>❤️ {INTEREST_LABELS[interest]}</Text>
+            ))}
+          </View>
+          {personalizationTopReasons.map((reason) => (
+            <Text key={reason} style={styles.personalizeReason}>• {reason}</Text>
+          ))}
+          {displayItems.length > 0 && (
+            <Text style={styles.personalizeNote}>
+              Showing {displayItems.length} results re-ranked by preference + activity + context.
+            </Text>
+          )}
         </View>
       )}
 
@@ -881,20 +1147,20 @@ const DiscoveryModulePanel = () => {
       )}
 
       {/* ─── BROWSE: Category results grid ─── */}
-      {activeView === 'browse' && (!isAllCategory || query.trim()) && (
+      {activeView === 'browse' && (!isAllCategory || query.trim() || items.length > 0 || loading) && (
         <View style={styles.listCard}>
           <View style={styles.listHeader}>
             <Text style={styles.cardTitle}>
               {query.trim()
-                ? `Results for "${query.trim()}" (${items.length}${totalItems > items.length ? ` / ${totalItems}` : ''})`
-                : `${getCategoryMeta(activeCategory).label} (${items.length}${totalItems > items.length ? ` / ${totalItems}` : ''})`}
+                ? `Results for "${query.trim()}" (${displayItems.length}${totalItems > displayItems.length ? ` / ${totalItems}` : ''})`
+                : `${getCategoryMeta(activeCategory).label} (${displayItems.length}${totalItems > displayItems.length ? ` / ${totalItems}` : ''})`}
             </Text>
             {loading && <ActivityIndicator size="small" color="#f5f5f5" />}
           </View>
           <View style={styles.listWrap}>
-            {items.length > 0 ? (
+            {displayItems.length > 0 ? (
               <>
-                {items.map((item) => (
+                {displayItems.map((item) => (
                   <ItemCard
                     key={item.id}
                     item={item}
@@ -1445,6 +1711,35 @@ const styles = StyleSheet.create({
   categoryHeader: { gap: 2, paddingHorizontal: 2 },
   categoryTitle: { color: '#f2f2f2', fontSize: 18, fontWeight: '700' },
   categoryDesc: { color: '#888', fontSize: 12 },
+
+  /* ── personalization card ── */
+  personalizeCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2f3343',
+    backgroundColor: '#131a2a',
+    padding: 12,
+    gap: 6,
+  },
+  personalizeHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  personalizeTitle: { color: '#e5ecff', fontSize: 13, fontWeight: '800' },
+  personalizeChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  personalizeChip: {
+    color: '#bfdbfe',
+    fontSize: 11,
+    backgroundColor: '#0f223d',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1f3558',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  personalizeReason: { color: '#cbd5e1', fontSize: 11 },
+  personalizeNote: { color: '#93c5fd', fontSize: 11, marginTop: 2 },
 
   /* ── filter card ── */
   filterCard: {

@@ -144,6 +144,7 @@ const AdminDashboardPanel: React.FC = () => {
 
   const [actionEventId, setActionEventId] = useState<number | null>(null);
   const [actionReviewId, setActionReviewId] = useState<number | null>(null);
+  const [actionUserId, setActionUserId] = useState<number | null>(null);
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<RejectTarget>(null);
@@ -290,6 +291,38 @@ const AdminDashboardPanel: React.FC = () => {
     }
   };
 
+  const updateUserStatus = (item: AdminUserListResponse['users'][number], active: boolean) => {
+    Alert.alert(
+      active ? 'Unban user' : 'Ban user',
+      active
+        ? `Unban ${item.username}?`
+        : `Ban ${item.username}? This will disable their account access.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: active ? 'Unban' : 'Ban',
+          style: active ? 'default' : 'destructive',
+          onPress: async () => {
+            try {
+              setActionUserId(item.id);
+              active
+                ? await adminApi.unbanUser(item.id)
+                : await adminApi.banUser(item.id);
+              await loadUsers(usersPage);
+              if (analytics) {
+                await loadAnalytics();
+              }
+            } catch (error: any) {
+              Alert.alert(active ? 'Unban user' : 'Ban user', error?.message || 'Action failed');
+            } finally {
+              setActionUserId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const rejectEvent = async () => {
     if (!rejectTarget) return;
     if (!rejectReason.trim()) {
@@ -408,6 +441,25 @@ const AdminDashboardPanel: React.FC = () => {
                 <Text style={styles.metaText}>Name: {[item.firstName, item.lastName].filter(Boolean).join(' ')}</Text>
               )}
               <Text style={styles.metaText}>Reports: {item.reportCount}</Text>
+              <View style={styles.cardActions}>
+                {item.isActive ? (
+                  <Pressable
+                    onPress={() => updateUserStatus(item, false)}
+                    disabled={actionUserId === item.id}
+                    style={[styles.actionBtn, styles.rejectBtn, actionUserId === item.id && styles.pageButtonDisabled]}
+                  >
+                    <Text style={styles.actionText}>{actionUserId === item.id ? 'Working...' : 'Ban'}</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => updateUserStatus(item, true)}
+                    disabled={actionUserId === item.id}
+                    style={[styles.actionBtn, styles.approveBtn, actionUserId === item.id && styles.pageButtonDisabled]}
+                  >
+                    <Text style={styles.actionText}>{actionUserId === item.id ? 'Working...' : 'Unban'}</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           ))}
 
@@ -820,6 +872,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#0f172a',
     padding: 11,
+  cardActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
     gap: 6,
   },
   cardTop: {

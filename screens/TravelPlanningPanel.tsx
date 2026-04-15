@@ -4,6 +4,7 @@ import {
   Alert,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -314,22 +315,33 @@ const TravelPlanningPanel: React.FC = () => {
     }
   };
 
-  const onDeletePlan = () => {
+  const onDeletePlan = async () => {
     if (!activePlanId) return;
+
+    const runDelete = async () => {
+      try {
+        await travelApi.deletePlan(activePlanId);
+        setLatestShareLink(null);
+        await loadPlans();
+      } catch (error: any) {
+        Alert.alert('Delete Plan', error?.message || 'Failed to delete plan.');
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof globalThis.confirm === 'function') {
+      const confirmed = globalThis.confirm('Delete this plan permanently?');
+      if (!confirmed) return;
+      await runDelete();
+      return;
+    }
 
     Alert.alert('Delete Plan', 'Delete this plan permanently?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            await travelApi.deletePlan(activePlanId);
-            setLatestShareLink(null);
-            await loadPlans();
-          } catch (error: any) {
-            Alert.alert('Delete Plan', error?.message || 'Failed to delete plan.');
-          }
+        onPress: () => {
+          void runDelete();
         },
       },
     ]);

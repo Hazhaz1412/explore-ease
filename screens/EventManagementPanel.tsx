@@ -652,6 +652,26 @@ const EventManagementPanel: React.FC = () => {
       Alert.alert('Validation', 'Please enter start and end dates (ISO format)');
       return;
     }
+
+    const start = new Date(createForm.startDate);
+    const end = new Date(createForm.endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      Alert.alert('Validation', 'Invalid start/end date format');
+      return;
+    }
+    if (end <= start) {
+      Alert.alert('Validation', 'End date must be later than start date');
+      return;
+    }
+
+    if (
+      createForm.maxAttendees != null &&
+      (!Number.isFinite(createForm.maxAttendees) || !Number.isInteger(createForm.maxAttendees) || createForm.maxAttendees <= 0)
+    ) {
+      Alert.alert('Validation', 'Max attendees must be a positive integer');
+      return;
+    }
+
     setCreating(true);
     try {
       await eventApi.create(createForm);
@@ -951,7 +971,13 @@ const EventManagementPanel: React.FC = () => {
               placeholderTextColor="#6b7280"
               keyboardType="number-pad"
               value={createForm.maxAttendees != null ? String(createForm.maxAttendees) : ''}
-              onChangeText={(v) => setCreateForm((p) => ({ ...p, maxAttendees: v ? parseInt(v, 10) : undefined }))}
+              onChangeText={(v) => {
+                const digitsOnly = v.replace(/\D+/g, '');
+                setCreateForm((p) => ({
+                  ...p,
+                  maxAttendees: digitsOnly ? Number.parseInt(digitsOnly, 10) : undefined,
+                }));
+              }}
             />
 
             <View style={styles.freeRow}>

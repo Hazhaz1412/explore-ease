@@ -231,43 +231,42 @@ const ExploreEaseMain = ({ onLoggedOut }: Props) => {
     </Animated.View>
   );
 
-  const isTabActive = (tab: TabKey) => activeTab === tab;
-
   const renderContent = () => {
+    const panelStyle = styles.tabContentContainer;
+    if (activeTab === 'discover') {
+      return <View style={panelStyle}>{renderDiscover()}</View>;
+    }
+    if (activeTab === 'events') {
+      return <View style={panelStyle}>{renderEvents()}</View>;
+    }
+    if (activeTab === 'travel') {
+      return <View style={panelStyle}>{renderTravelPlanning()}</View>;
+    }
+    if (activeTab === 'social') {
+      return <View style={panelStyle}>{renderSocial()}</View>;
+    }
+    if (activeTab === 'messages') {
+      return <View style={panelStyle}>{renderMessages()}</View>;
+    }
+    if (activeTab === 'notifications') {
+      return <View style={panelStyle}>{renderNotifications()}</View>;
+    }
+    if (activeTab === 'community') {
+      return <View style={panelStyle}>{renderCommunity()}</View>;
+    }
+    if (activeTab === 'offline') {
+      return <View style={panelStyle}>{renderOffline()}</View>;
+    }
+    if (activeTab === 'admin' && isAdmin) {
+      return <View style={panelStyle}>{renderAdmin()}</View>;
+    }
+    if (activeTab === 'profile') {
+      return <View style={panelStyle}>{renderProfile()}</View>;
+    }
+
     return (
       <View style={styles.mainContentWrapper}>
-        <View style={[styles.tabContentContainer, !isTabActive('discover') && styles.hiddenTab]}>
-          {renderDiscover()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('events') && styles.hiddenTab]}>
-          {renderEvents()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('travel') && styles.hiddenTab]}>
-          {renderTravelPlanning()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('social') && styles.hiddenTab]}>
-          {renderSocial()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('messages') && styles.hiddenTab]}>
-          {renderMessages()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('notifications') && styles.hiddenTab]}>
-          {renderNotifications()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('community') && styles.hiddenTab]}>
-          {renderCommunity()}
-        </View>
-        <View style={[styles.tabContentContainer, !isTabActive('offline') && styles.hiddenTab]}>
-          {renderOffline()}
-        </View>
-        {isAdmin && (
-          <View style={[styles.tabContentContainer, !isTabActive('admin') && styles.hiddenTab]}>
-            {renderAdmin()}
-          </View>
-        )}
-        <View style={[styles.tabContentContainer, !isTabActive('profile') && styles.hiddenTab]}>
-          {renderProfile()}
-        </View>
+        <View style={styles.tabContentContainer}>{renderDiscover()}</View>
       </View>
     );
   };
@@ -457,9 +456,6 @@ const styles = StyleSheet.create({
   },
   tabContentContainer: {
     flex: 1,
-  },
-  hiddenTab: {
-    display: 'none',
   },
   sectionContainer: {
     backgroundColor: '#111827',

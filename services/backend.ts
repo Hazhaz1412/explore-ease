@@ -117,6 +117,38 @@ const normalizeSession = (payload: any): AuthSession => ({
   user: payload.user,
 });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientNetworkError = (error: unknown) => {
+  const message = String((error as { message?: string } | null)?.message || error || '').toLowerCase();
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('network request failed') ||
+    message.includes('load failed') ||
+    message.includes('cors request did not succeed')
+  );
+};
+
+const fetchWithRetry = async (
+  url: string,
+  init: RequestInit,
+  maxRetries = 2
+): Promise<Response> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientNetworkError(error) || attempt === maxRetries) {
+        throw error;
+      }
+      await sleep(250 * (attempt + 1));
+    }
+  }
+  throw lastError;
+};
+
 const request = async <T>(
   path: string,
   init: RequestInit = {},
@@ -132,7 +164,7 @@ const request = async <T>(
     headers.Authorization = `Bearer ${activeSession.accessToken}`;
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetchWithRetry(`${API_URL}${path}`, {
     ...init,
     headers,
   });
@@ -161,7 +193,7 @@ const refreshSessionToken = async (): Promise<boolean> => {
   }
 
   refreshingPromise = (async () => {
-    const response = await fetch(`${API_URL}/api/auth/refresh-token`, {
+    const response = await fetchWithRetry(`${API_URL}/api/auth/refresh-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: activeSession?.refreshToken }),
@@ -377,7 +409,7 @@ export const userApi = {
         headers.Authorization = `Bearer ${activeSession.accessToken}`;
       }
 
-      const response = await fetch(`${API_URL}/api/user/profile/picture`, {
+      const response = await fetchWithRetry(`${API_URL}/api/user/profile/picture`, {
         method: 'POST',
         headers,
         body: formData,
@@ -534,6 +566,11 @@ export type DiscoveryBrowseResponse = {
   referenceLongitude: number;
   autocompleteSuggestions: string[];
   items: DiscoveryItem[];
+  personalizationTimeBucket?: string;
+  personalizationWeather?: string;
+  personalizationSeason?: string;
+  personalizationReasons?: string[];
+  personalizationInterests?: string[];
   page: number;
   totalItems: number;
   totalPages: number;
@@ -1176,6 +1213,14 @@ export const adminApi = {
       size: input.size,
     });
     return request<AdminUserListResponse>(`/api/admin/users${query}`, { method: 'GET' }, { auth: true });
+  },
+
+  async banUser(userId: number) {
+    return request<AdminUserListResponse>(`/api/admin/users/${userId}/ban`, { method: 'POST' }, { auth: true });
+  },
+
+  async unbanUser(userId: number) {
+    return request<AdminUserListResponse>(`/api/admin/users/${userId}/unban`, { method: 'POST' }, { auth: true });
   },
 
   async listEvents(input: {
